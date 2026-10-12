@@ -1,0 +1,55 @@
+# work_photos CI（T4.2 / R15）。
+#
+# 三个卡点：
+# 1. analyze：静态分析零告警（含 const / 语义色等 lint）；
+# 2. test：单元测试全绿（主题 / 工具 / 控制器等 flutter_test）；
+# 3. build：release APK 可构建（gen-l10n / build_runner / KGP 全链路）。
+#
+# 性能预算（R15 验收口径）：
+#   - jank < 5%、冷启动 < 1.5s、缩略图缓存命中 ≥ 90%；
+#   - 由 integration_test/perf_test.dart 在真机 / 模拟器上执行
+#     （`flutter test integration_test/perf_test.dart -d <device>`），
+#     需要设备矩阵，暂不放进本 CI，作为发布前手工卡点执行；
+#     后续如接入 Firebase Test Lab / 自托管模拟器可加 job 卡点。
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze --fatal-infos
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build apk --release

@@ -1,0 +1,9 @@
+# Flutter gen-l10n 配置（R12 国际化框架）。
+#
+# 构建时（flutter build/run/test）自动生成到 lib/l10n/generated/，
+# 页面经 `package:work_photos/l10n/generated/app_localizations.dart` 引入。
+arb-dir: lib/l10n
+template-arb-file: app_zh.arb
+output-localizations-file: app_localizations.dart
+output-dir: lib/l10n/generated
+nullable-getter: false

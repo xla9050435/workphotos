@@ -1,0 +1,25 @@
+【第 3/6 步：自动添加「读取相册」权限】
+
+这一步在干什么：
+  Android 从 13 开始对读取相册做了严格限制，
+  App 必须在配置文件 AndroidManifest.xml 里「声明」自己要读相册，
+  否则运行时会直接崩溃或一直显示空白。
+
+脚本会加下面两行（对应两代 Android 系统）：
+
+  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+                   android:maxSdkVersion="32" />
+
+是否会重复插入：
+  不会。脚本会先检查这两行是否已经存在，只补缺的那一行。
+  反复运行任意多次，结果都一样。
+  如果你手动改过这个文件，只要权限还在，脚本就不会动它。
+
+安全提示：
+  第一次修改前，脚本会自动备份一份 AndroidManifest.xml.bak，
+  万一改坏了，把备份改回原名即可。
+
+关于 App 的设计原则：
+  这里声明的只是「读取权限」——本 App 只记住照片在相册里的位置，
+  不会复制、上传或修改你的任何照片。

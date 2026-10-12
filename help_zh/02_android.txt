@@ -1,0 +1,14 @@
+【第 2/6 步：生成 Android 工程目录】
+
+这一步在干什么：
+  Flutter 的工程一开始只有 Dart 代码（lib 文件夹），
+  缺少编译成手机 App 所必需的 Android 配置文件。
+  这一步用 flutter create 命令把 android 文件夹自动补齐。
+
+关于安全性（重要）：
+  flutter create 只会「补充缺失的文件」，
+  你的 lib 文件夹、pubspec.yaml、README 都不会被覆盖或删除。
+
+如果 android 文件夹已经存在：
+  脚本会自动跳过这一步（不会重复生成、不会覆盖）。
+  所以你**可以放心地反复双击这个脚本**，不会有副作用。

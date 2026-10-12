@@ -1,0 +1,27 @@
+【打 APK 安装包】
+
+刚才编译出来的 APK 文件在下面这个文件夹里：
+
+  D:\work_photos\build\app\outputs\flutter-apk\
+
+怎么装到手机上（三种方式，任选一种）：
+
+  方式一（最简单）：把 .apk 文件拷到手机上（数据线 / 微信 / 网盘都行），
+    然后在手机上点这个文件安装。第一次会提示「未知来源」，
+    按提示进设置里允许一次即可。
+
+  方式二（电脑上装）：手机连着电脑，用数据线，然后在
+    build_apk.bat 运行完的这个黑色窗口里输入：
+        adb install -r "D:\work_photos\build\app\outputs\flutter-apk\app-release.apk"
+
+  方式三：直接把手机上的「USB 调试」开着，让开发者用命令行安装。
+
+关于两种包的区别：
+
+  app-release.apk   正式包。体积更小、运行更顺，适合日常使用。
+  app-debug.apk     调试包。只在你想让开发人员连着看日志时才需要。
+
+小提示：
+  第一次打包要下载 Android 编译工具（Gradle 相关组件），
+  5-15 分钟都属正常，请不要中途关窗口。
+  之后再打包就会快很多。
