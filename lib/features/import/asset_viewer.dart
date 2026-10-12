@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
 
+import 'package:work_photos/core/utils/duration_format.dart';
 import 'package:work_photos/features/import/asset_info_sheet.dart';
 import 'package:work_photos/widgets/thumbnail.dart';
 
@@ -77,13 +78,51 @@ class _AssetViewerPageState extends State<_AssetViewerPage> {
           controller: _pageController,
           itemCount: widget.assets.length,
           onPageChanged: (i) => setState(() => _index = i),
-          itemBuilder: (context, i) => InteractiveViewer(
-            minScale: 0.5,
-            maxScale: 4,
-            child: Center(
-              child: Thumbnail(entity: widget.assets[i], size: 2000),
-            ),
-          ),
+          itemBuilder: (context, i) {
+            final pm.AssetEntity asset = widget.assets[i];
+            final bool isVideo = asset.type == pm.AssetType.video;
+            final String? dur = isVideo ? formatDuration(asset.videoDuration) : null;
+            return InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4,
+              child: Center(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    Thumbnail(entity: asset, size: 2000),
+                    // 视频预览：中央播放三角 + 底部时长（导入前预览不支持
+                    // 内嵌播放，避免引入重依赖；时长与类型标识足够判断）。
+                    if (isVideo)
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.play_arrow,
+                            size: 36, color: Colors.white),
+                      ),
+                    if (isVideo && dur != null)
+                      Positioned(
+                        bottom: 24,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text('视频 · $dur',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12)),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

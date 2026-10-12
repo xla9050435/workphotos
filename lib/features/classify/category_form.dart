@@ -31,6 +31,9 @@ List<int> categoryDescendantIds(List<Category> all, int rootId) {
 /// UI 展示禁用开关并说明不建文件夹。
 class CategoryForm extends StatefulWidget {
   /// 现有全部分类，用于父级下拉候选（需排除自身与后代以防成环）。
+  ///
+  /// 顺序由调用方决定（页面按当前分类排序模式传入 sortedCategoryListProvider
+  /// 的结果），表单**不做二次排序**，直接沿用传入顺序渲染。
   final List<Category> allCategories;
   final Category? initial;
   final ValueChanged<Category> onSubmit;

@@ -28,7 +28,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -48,6 +48,15 @@ class AppDatabase extends _$AppDatabase {
               'CREATE INDEX IF NOT EXISTS idx_photos_created_at '
               'ON photos (created_at);',
             );
+          }
+          // v3 → v4（视频支持）：photos 新增 media_type / duration_ms /
+          // width / height 四列。media_type 带默认值 'image'，
+          // 历史数据自动按图片处理；其余三列可空。
+          if (from < 4) {
+            await m.addColumn(photos, photos.mediaType);
+            await m.addColumn(photos, photos.durationMs);
+            await m.addColumn(photos, photos.width);
+            await m.addColumn(photos, photos.height);
           }
         },
       );

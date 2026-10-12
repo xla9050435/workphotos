@@ -20,11 +20,19 @@ class ExportService {
   /// 导出到本机，返回实际写入的文件与是否成功落入公共下载目录。
   ///
   /// [onSkip]：失效引用（源文件缺失）被跳过的张数回调。
+  ///
+  /// PDF 格式前置校验：PDF 只承载图片，0 张图片会产出 0 页的无效 PDF
+  /// （pdf 包的 save() 不做 0 页校验），故在打包前抛 [StateError]，
+  /// 由 UI 层捕获并提示用户。
   static Future<({File file, bool inPublicDownload, int skipped})> export(
     List<Photo> photos,
     ExportFormat format, {
     void Function(int skipped)? onSkip,
   }) async {
+    if (format == ExportFormat.pdf &&
+        photos.every((Photo p) => p.isVideo)) {
+      throw StateError('所选内容没有图片，无法生成 PDF');
+    }
     // 1) 打包到临时目录（复用既有打包器）。
     final (_, int skipped) = await _resolveFiles(photos);
     onSkip?.call(skipped);

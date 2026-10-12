@@ -28,6 +28,10 @@ class FilterBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final PhotoFilter filter = ref.watch(gridFilterProvider);
+    // 分类按全局排序模式（默认名称升序）展示。
+    final List<Category> cats = ref.watch(sortedCategoryListProvider);
+    // 原始流：仅用于 loading / error 判定——sortedCategoryListProvider 把
+    // 二者都压成空列表，直接用它判空会在冷启动/出错时误渲染成「无分类」。
     final AsyncValue<List<Category>> catsAsync =
         ref.watch(categoryListProvider);
 
@@ -38,19 +42,16 @@ class FilterBar extends ConsumerWidget {
         children: <Widget>[
           _chip('全部分类', filter.categoryId == null,
               () => _setCategory(ref, null)),
-          catsAsync.when(
-            data: (List<Category> cats) => Row(
-              children: cats.map((Category c) {
-                return _chip(
-                  c.name,
-                  filter.categoryId == c.id,
-                  () => _setCategory(ref, c.id),
-                );
-              }).toList(),
-            ),
-            loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
-          ),
+          // 加载中 / 加载失败：不渲染分类芯片（避免闪「无分类」或空白）。
+          if (catsAsync.isLoading || catsAsync.hasError)
+            const SizedBox.shrink()
+          else
+            for (final Category c in cats)
+              _chip(
+                c.name,
+                filter.categoryId == c.id,
+                () => _setCategory(ref, c.id),
+              ),
           const VerticalDivider(width: 16),
           _chip('全部状态', filter.status == null,
               () => _setStatus(ref, null)),

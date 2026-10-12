@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:work_photos/data/db/app_database.dart';
 import 'package:work_photos/data/db/tables/categories.dart';
+import 'package:work_photos/data/models/media_type.dart';
 
 /// 本地备份 / 恢复服务（T4.3 / R11）。
 ///
@@ -83,6 +84,10 @@ class BackupService {
             'usedStatus': row.usedStatus,
             'note': row.note,
             'sourceAlbum': row.sourceAlbum,
+            'mediaType': row.mediaType,
+            'durationMs': row.durationMs,
+            'width': row.width,
+            'height': row.height,
             'createdAt': row.createdAt.toIso8601String(),
             'updatedAt': row.updatedAt.toIso8601String(),
           },
@@ -159,6 +164,13 @@ class BackupService {
           usedStatus: Value((m['usedStatus'] as int? ?? 0)),
           note: Value(m['note'] as String?),
           sourceAlbum: Value(m['sourceAlbum'] as String?),
+          // 视频字段：旧备份无这些键，兜底按图片恢复（mediaType 缺省
+          // 'image'，时长/尺寸为 null）。
+          mediaType:
+              Value(m['mediaType'] as String? ?? MediaType.image.value),
+          durationMs: Value(m['durationMs'] as int?),
+          width: Value(m['width'] as int?),
+          height: Value(m['height'] as int?),
           createdAt: DateTime.tryParse(m['createdAt'] as String? ?? '') ??
               DateTime.now(),
           updatedAt: DateTime.tryParse(m['updatedAt'] as String? ?? '') ??

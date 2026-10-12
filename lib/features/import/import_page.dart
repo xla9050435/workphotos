@@ -156,7 +156,7 @@ class _ImportPageState extends ConsumerState<ImportPage>
       }
       final List<pm.AssetPathEntity> albums =
           await pm.PhotoManager.getAssetPathList(
-        type: pm.RequestType.image,
+        type: pm.RequestType.common,
         // 相册会携带该过滤器用于后续 getAssetListPaged 分页（见
         // AssetPathEntity.getAssetListPaged 的 optionGroup: filterOption）。
         filterOption: _newestFirstFilter(),
@@ -347,14 +347,14 @@ class _ImportPageState extends ConsumerState<ImportPage>
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('确认导入 ${_selected.length} 张照片'),
+        title: Text('确认导入 ${_selected.length} 项媒体'),
         content: SizedBox(
           width: double.maxFinite,
           height: 380,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const Text('即将以"引用"方式导入以下照片（仅记录引用，不复制文件）：'),
+              const Text('即将以"引用"方式导入以下媒体（仅记录引用，不复制文件）：'),
               const SizedBox(height: 12),
               Expanded(
                 child: GridView.builder(
@@ -397,7 +397,7 @@ class _ImportPageState extends ConsumerState<ImportPage>
     if (mounted) {
       setState(() => _selected.clear());
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已引用导入 $n 张照片（仅记录引用，未复制文件）')),
+        SnackBar(content: Text('已引用导入 $n 项媒体（仅记录引用，未复制文件）')),
       );
     }
   }
@@ -487,7 +487,7 @@ class _ImportPageState extends ConsumerState<ImportPage>
                         // 拉起系统「选择照片」面板（Android 14+），可选"全部"。
                         onPickMore: () async {
                           await pm.PhotoManager.presentLimited(
-                              type: pm.RequestType.image);
+                              type: pm.RequestType.common);
                           _loadAlbums();
                         },
                         onGrant: () async {
@@ -514,7 +514,7 @@ class _ImportPageState extends ConsumerState<ImportPage>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
                         child: Text(
-                          '已加载 ${_assets.length} / 共 ${_albumCounts[_currentAlbum!.id] ?? 0} 张，下滑到底自动加载更多',
+                          '已加载 ${_assets.length} / 共 ${_albumCounts[_currentAlbum!.id] ?? 0} 项，下滑到底自动加载更多',
                           style: TextStyle(
                             fontSize: 12,
                             color: Theme.of(context)

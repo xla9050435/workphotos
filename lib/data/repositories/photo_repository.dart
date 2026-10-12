@@ -4,6 +4,8 @@ import 'package:photo_manager/photo_manager.dart' as pm;
 import 'package:work_photos/core/utils/media_ref.dart';
 import 'package:work_photos/data/db/app_database.dart';
 import 'package:work_photos/data/db/tables/photos.dart';
+import 'package:work_photos/data/models/import_item.dart';
+import 'package:work_photos/data/models/media_type.dart';
 import 'package:work_photos/data/models/photo.dart';
 import 'package:work_photos/data/models/used_status.dart';
 
@@ -17,21 +19,26 @@ class PhotoRepository {
   /// 构造时注入 [AppDatabase]（来自 [appDatabaseProvider]）。
   PhotoRepository(this._db);
 
-  /// 引用式批量导入：逐条插入照片（绝不拷贝任何字节）。
+  /// 引用式批量导入：逐条插入媒体（绝不拷贝任何字节）。
   ///
-  /// - [refs]：媒体引用（uri 类型存 AssetEntity.id，path 类型存本地路径）。
+  /// - [items]：待导入的媒体项（引用 + 类型 / 时长 / 尺寸元数据）。
   /// - [album]：来源相册名（可选）。
   /// 返回成功插入的记录数。
-  Future<int> importFromAlbum(List<MediaRef> refs, {String? album}) async {
+  Future<int> importFromAlbum(List<ImportItem> items, {String? album}) async {
     int inserted = 0;
     final DateTime now = DateTime.now();
-    for (final MediaRef ref in refs) {
+    for (final ImportItem item in items) {
+      final MediaRef ref = item.ref;
       final int id = await _db.photoDao.insert(
         PhotosCompanion.insert(
           mediaRefValue: ref.value,
           mediaRefType: ref.type.value,
           usedStatus: const Value(0),
           sourceAlbum: Value(album),
+          mediaType: Value(item.mediaType.value),
+          durationMs: Value(item.durationMs),
+          width: Value(item.width),
+          height: Value(item.height),
           createdAt: now,
           updatedAt: now,
         ),
@@ -183,6 +190,10 @@ class PhotoRepository {
       note: row.note,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      mediaType: MediaType.fromValue(row.mediaType),
+      durationMs: row.durationMs,
+      width: row.width,
+      height: row.height,
     );
   }
 }

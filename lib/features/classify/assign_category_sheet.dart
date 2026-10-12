@@ -7,7 +7,8 @@ import 'package:work_photos/providers/photo_provider.dart';
 
 /// 底部弹层：把一张或多张照片归入 / 移出某分类（B3）。
 ///
-/// 通过 [AssignCategorySheet.show] 拉起。内部读取分类列表，
+/// 通过 [AssignCategorySheet.show] 拉起。内部读取分类列表
+/// （按全局排序模式排好，与筛选条 / 分类管理页口径一致），
 /// 并以首张照片的当前归属初始化勾选态；勾选变化即调用
 /// [PhotoRepository.assignCategory] / [unassignCategory]。
 class AssignCategorySheet extends ConsumerStatefulWidget {
@@ -77,8 +78,11 @@ class _AssignCategorySheetState extends ConsumerState<AssignCategorySheet> {
 
   @override
   Widget build(BuildContext context) {
+    // 原始流：仅用于判断是否仍在加载 / 加载失败。
     final AsyncValue<List<Category>> catsAsync =
         ref.watch(categoryListProvider);
+    // 展示用列表：跟随全局分类排序模式（与筛选条 / 分类管理页一致）。
+    final List<Category> cats = ref.watch(sortedCategoryListProvider);
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -89,31 +93,29 @@ class _AssignCategorySheetState extends ConsumerState<AssignCategorySheet> {
             Text('归入分类（共 ${widget.photoIds.length} 张照片）',
                 style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            if (!_loaded)
+            if (!_loaded || catsAsync.isLoading)
               const Center(child: CircularProgressIndicator())
+            else if (catsAsync.hasError)
+              Text('加载失败：${catsAsync.error}')
             else
-              catsAsync.when(
-                data: (cats) => cats.isEmpty
-                    ? const Text('暂无分类，请先新建分类。')
-                    : Flexible(
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: cats.length,
-                          itemBuilder: (ctx, i) {
-                            final cat = cats[i];
-                            final int cid = cat.id ?? -1;
-                            final bool checked = _assigned.contains(cid);
-                            return CheckboxListTile(
-                              title: Text(cat.name),
-                              value: checked,
-                              onChanged: (_) => _toggle(cat),
-                            );
-                          },
-                        ),
+              cats.isEmpty
+                  ? const Text('暂无分类，请先新建分类。')
+                  : Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: cats.length,
+                        itemBuilder: (ctx, i) {
+                          final Category cat = cats[i];
+                          final int cid = cat.id ?? -1;
+                          final bool checked = _assigned.contains(cid);
+                          return CheckboxListTile(
+                            title: Text(cat.name),
+                            value: checked,
+                            onChanged: (_) => _toggle(cat),
+                          );
+                        },
                       ),
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Text('加载失败：$e'),
-              ),
+                    ),
             const SizedBox(height: 8),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(),

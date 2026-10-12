@@ -4,29 +4,32 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:work_photos/data/models/category.dart';
 import 'package:work_photos/core/utils/color_contrast.dart';
 import 'package:work_photos/features/classify/category_form.dart';
+import 'package:work_photos/features/classify/category_sort.dart';
 import 'package:work_photos/features/classify/category_style.dart';
+import 'package:work_photos/features/me/settings_provider.dart';
 import 'package:work_photos/providers/category_provider.dart';
 
-/// 将扁平分类列表整理为树序（父在前、子在后，DFS），用于层级展示。
-List<Category> _toTreeOrdered(List<Category> flat) {
-  final Map<int?, List<Category>> childrenOf = <int?, List<Category>>{};
-  for (final Category c in flat) {
-    childrenOf.putIfAbsent(c.parentId, () => <Category>[]).add(c);
-  }
-  final List<Category> out = <Category>[];
-  void dfs(Category c) {
-    out.add(c);
-    for (final Category child in childrenOf[c.id] ?? <Category>[]) dfs(child);
-  }
+/// 排序菜单项：当前生效的模式显示打勾图标（未选中侧留等宽占位，文字对齐）。
+class _SortMenuItem extends ConsumerWidget {
+  final String label;
+  final String value;
 
-  for (final Category root in childrenOf[null] ?? <Category>[]) dfs(root);
-  // 兜底：若某分类的父指向不存在的节点，补到末尾，避免丢失。
-  if (out.length < flat.length) {
-    for (final Category c in flat) {
-      if (!out.contains(c)) out.add(c);
-    }
+  const _SortMenuItem({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bool active = ref.watch(categorySortModeProvider) == value;
+    return Row(
+      children: <Widget>[
+        active
+            ? Icon(Icons.check,
+                size: 20, color: Theme.of(context).colorScheme.primary)
+            : const SizedBox(width: 20),
+        const SizedBox(width: 8),
+        Text(label),
+      ],
+    );
   }
-  return out;
 }
 
 /// 计算每个分类在树中的深度（根=0），用于缩进展示。
@@ -54,13 +57,17 @@ Map<int, int> _depthMap(List<Category> flat) {
   return depth;
 }
 
-/// 分类管理页（B3 + R8 增强）。
+/// 分类管理页（B3 + R8 增强 + 分类排序）。
 ///
-/// 通过 [categoryListProvider] 实时观察分类列表；支持增 / 编 / 删 /
-/// 拖拽排序（持久化，已有），R8 新增：
+/// 通过 [sortedCategoryListProvider] 观察**已按当前排序模式排好**的分类
+/// 列表（集合完整，顺序与相册筛选条 / 分类表单 / 分配面板统一）；支持
+/// 增 / 编 / 删 / 拖拽排序（持久化，已有），R8 新增：
 /// - 列表内搜索过滤（按名称子串匹配，纯客户端）；
 /// - 长按进入多选，批量改色 / 批量移动到父级 / 批量删除（带确认与防环）。
 /// 搜索过滤时禁用拖拽排序（子集重排会写出错误的 sortOrder）。
+///
+/// 排序模式（AppBar 菜单，写 [settingsProvider]）：手动（可拖拽）/
+/// 名称升序 / 名称降序；后两者下拖拽会先自动切回手动排序再持久化。
 class CategoryPage extends ConsumerStatefulWidget {
   const CategoryPage({super.key});
 
@@ -88,13 +95,21 @@ class _CategoryPageState extends ConsumerState<CategoryPage> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final AsyncValue<List<Category>> categoriesAsync =
+    // 分类列表：集合始终完整，顺序由全局排序模式决定。
+    final List<Category> categories = ref.watch(sortedCategoryListProvider);
+    // 当前排序模式：决定菜单打勾项与拖拽时是否自动切回手动排序。
+    final String sortMode = ref.watch(categorySortModeProvider);
+    // 原始流：仅用于 loading / error 判定（sortedCategoryListProvider 把
+    // 二者都压成空列表，不能直接拿它判空，否则冷启动会闪「暂无分类」）。
+    final AsyncValue<List<Category>> catsAsync =
         ref.watch(categoryListProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(_selecting ? '已选 ${_selected.length} 项' : '分类管理'),
         actions: <Widget>[
+          // 排序模式菜单：手动 / 名称升序 / 名称降序（全局生效）。
+          _buildSortMenu(ref),
           if (_selecting)
             IconButton(
               icon: const Icon(Icons.close),
@@ -134,65 +149,11 @@ class _CategoryPageState extends ConsumerState<CategoryPage> {
                 ),
               ),
       ),
-      body: categoriesAsync.when(
-        data: (List<Category> categories) {
-          if (categories.isEmpty) {
-            return const Center(
-              child: Text('暂无分类，点击右下角 + 新建。'),
-            );
-          }
-          // 搜索过滤（子串匹配，大小写不敏感）。
-          final String kw = _search.trim().toLowerCase();
-          final List<Category> filtered = kw.isEmpty
-              ? categories
-              : categories
-                  .where((Category c) =>
-                      c.name.toLowerCase().contains(kw))
-                  .toList();
-          if (filtered.isEmpty) {
-            return const Center(child: Text('没有匹配的分类。'));
-          }
-          // 按层级整理为树序，并计算每个节点的深度用于缩进。
-          final List<Category> display = _toTreeOrdered(filtered);
-          final Map<int, int> depths = _depthMap(filtered);
-          final Map<int, String> nameOf = <int, String>{
-            for (final Category c in filtered)
-              if (c.id != null) c.id!: c.name,
-          };
-          final bool reorderable = !_selecting && kw.isEmpty;
-          final List<Widget> tiles = <Widget>[
-            for (int i = 0; i < display.length; i++)
-              _CategoryTile(
-                key: Key('category-${display[i].id}'),
-                index: i,
-                category: display[i],
-                depth: depths[display[i].id] ?? 0,
-                parentName: display[i].parentId == null
-                    ? null
-                    : nameOf[display[i].parentId],
-                inSelectionMode: _selecting,
-                isSelected: _selected.contains(display[i].id),
-                onLongPress: () => _enterSelection(display[i]),
-                onTapInSelectionMode: () => _toggleSelection(display[i]),
-              ),
-          ];
-          if (reorderable) {
-            return ReorderableListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              // 关闭默认整行拖拽，仅拖拽手柄可触发排序，避免与编辑/删除按钮冲突。
-              buildDefaultDragHandles: false,
-              onReorder: (int oldIndex, int newIndex) {
-                _onReorder(ref, display, oldIndex, newIndex);
-              },
-              children: tiles,
-            );
-          }
-          // 多选态 / 搜索过滤态：普通列表（禁用拖拽，避免子集重排写错顺序）。
-          return ListView(children: tiles);
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('加载失败：$error')),
-      ),
+      body: catsAsync.isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : catsAsync.hasError
+              ? Center(child: Text('分类加载失败：${catsAsync.error}'))
+              : _buildBody(ref, categories, sortMode),
       floatingActionButton: _selecting
           ? null
           : FloatingActionButton(
@@ -231,6 +192,91 @@ class _CategoryPageState extends ConsumerState<CategoryPage> {
               ),
             )
           : null,
+    );
+  }
+
+  /// 列表主体：空态 / 搜索过滤 / 树序展示 + 拖拽排序。
+  ///
+  /// [categories] 为 [sortedCategoryListProvider] 给出的完整分类集
+  /// （顺序已按模式排好）；搜索过滤后仍按同一模式重排每一层。
+  Widget _buildBody(WidgetRef ref, List<Category> categories, String sortMode) {
+    if (categories.isEmpty) {
+      return const Center(
+        child: Text('暂无分类，点击右下角 + 新建。'),
+      );
+    }
+    // 搜索过滤（子串匹配，大小写不敏感）。
+    final String kw = _search.trim().toLowerCase();
+    final List<Category> filtered = kw.isEmpty
+        ? categories
+        : categories
+            .where((Category c) => c.name.toLowerCase().contains(kw))
+            .toList();
+    if (filtered.isEmpty) {
+      return const Center(child: Text('没有匹配的分类。'));
+    }
+    // 按层级整理为树序（同层按当前排序模式排），并计算每个节点的深度
+    // 用于缩进（treeOrdered 见 category_sort.dart，可被单测直接覆盖）。
+    final List<Category> display = treeOrdered(filtered, sortMode: sortMode);
+    final Map<int, int> depths = _depthMap(filtered);
+    final Map<int, String> nameOf = <int, String>{
+      for (final Category c in filtered)
+        if (c.id != null) c.id!: c.name,
+    };
+    final bool reorderable = !_selecting && kw.isEmpty;
+    final List<Widget> tiles = <Widget>[
+      for (int i = 0; i < display.length; i++)
+        _CategoryTile(
+          key: Key('category-${display[i].id}'),
+          index: i,
+          category: display[i],
+          depth: depths[display[i].id] ?? 0,
+          parentName: display[i].parentId == null
+              ? null
+              : nameOf[display[i].parentId],
+          inSelectionMode: _selecting,
+          isSelected: _selected.contains(display[i].id),
+          onLongPress: () => _enterSelection(display[i]),
+          onTapInSelectionMode: () => _toggleSelection(display[i]),
+        ),
+    ];
+    if (reorderable) {
+      return ReorderableListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        // 关闭默认整行拖拽，仅拖拽手柄可触发排序，避免与编辑/删除按钮冲突。
+        buildDefaultDragHandles: false,
+        onReorder: (int oldIndex, int newIndex) {
+          _onReorder(ref, display, oldIndex, newIndex);
+        },
+        children: tiles,
+      );
+    }
+    // 多选态 / 搜索过滤态：普通列表（禁用拖拽，避免子集重排写错顺序）。
+    return ListView(children: tiles);
+  }
+
+  /// AppBar 排序菜单：手动 / 名称升序 / 名称降序（当前模式打勾）。
+  Widget _buildSortMenu(WidgetRef ref) {
+    return PopupMenuButton<String>(
+      tooltip: '分类排序',
+      icon: const Icon(Icons.sort_by_alpha),
+      initialValue: ref.watch(categorySortModeProvider),
+      onSelected: (String mode) =>
+          ref.read(settingsProvider.notifier).setCategorySortMode(mode),
+      itemBuilder: (BuildContext ctx) => const <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: kCategorySortManual,
+          child: _SortMenuItem(label: '手动排序', value: kCategorySortManual),
+        ),
+        PopupMenuItem<String>(
+          value: kCategorySortNameAsc,
+          child: _SortMenuItem(label: '名称升序', value: kCategorySortNameAsc),
+        ),
+        PopupMenuItem<String>(
+          value: kCategorySortNameDesc,
+          child: _SortMenuItem(label: '名称降序', value: kCategorySortNameDesc),
+        ),
+      ],
     );
   }
 
@@ -303,8 +349,8 @@ class _CategoryPageState extends ConsumerState<CategoryPage> {
   /// 候选排除所选分类自身及其后代（防父子环）；仓储层另有兜底校验。
   /// 弹窗返回值约定：null=取消，-1=移到根分类，>0=挂到该 id 下。
   Future<void> _batchMove(BuildContext context) async {
-    final List<Category> all =
-        ref.read(categoryListProvider).valueOrNull ?? const <Category>[];
+    // 候选需完整分类集（sortedCategoryListProvider 只改顺序、不改集合）。
+    final List<Category> all = ref.read(sortedCategoryListProvider);
     final Set<int> forbidden = <int>{..._selected};
     for (final int id in _selected) {
       forbidden.addAll(categoryDescendantIds(all, id));
@@ -407,8 +453,8 @@ class _CategoryPageState extends ConsumerState<CategoryPage> {
       context: context,
       isScrollControlled: true,
       builder: (ctx) => CategoryForm(
-        allCategories: ref.read(categoryListProvider).valueOrNull ??
-            const <Category>[],
+        // 传入完整分类集（顺序跟随当前排序模式），表单据此渲染父级候选。
+        allCategories: ref.read(sortedCategoryListProvider),
         initial: initial,
         onSubmit: (category) => Navigator.of(ctx).pop(category),
       ),
@@ -426,12 +472,26 @@ class _CategoryPageState extends ConsumerState<CategoryPage> {
   ///
   /// 按 Flutter 约定（下移时 newIndex 需 -1）在本地列表上重排，再写入数据库，
   /// Riverpod 流会自动刷新列表顺序。
+  ///
+  /// 名称排序模式下拖拽 = 用户想要自定义顺序：先切回手动模式（并提示），
+  /// 再把本次拖拽结果写成新的手动顺序，否则写入的 sortOrder 会被
+  /// 名称比较器在下次渲染时覆盖。
   Future<void> _onReorder(
     WidgetRef ref,
     List<Category> categories,
     int oldIndex,
     int newIndex,
   ) async {
+    if (ref.read(categorySortModeProvider) != kCategorySortManual) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setCategorySortMode(kCategorySortManual);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已切换到手动排序')),
+        );
+      }
+    }
     final List<Category> ordered = List<Category>.from(categories);
     if (oldIndex < newIndex) newIndex -= 1;
     final Category moved = ordered.removeAt(oldIndex);
@@ -519,8 +579,8 @@ class _CategoryTile extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       builder: (ctx) => CategoryForm(
-        allCategories: ref.read(categoryListProvider).valueOrNull ??
-            const <Category>[],
+        // 同上：完整分类集 + 当前排序顺序。
+        allCategories: ref.read(sortedCategoryListProvider),
         initial: category,
         onSubmit: (c) => Navigator.of(ctx).pop(c),
       ),

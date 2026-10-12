@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
 
+import 'package:work_photos/core/utils/duration_format.dart';
 import 'package:work_photos/features/me/settings_provider.dart';
 import 'package:work_photos/widgets/continuous_grid_delegate.dart';
 import 'package:work_photos/widgets/grid_drag_select_controller.dart';
@@ -14,6 +15,45 @@ import 'package:work_photos/widgets/thumbnail.dart';
 /// 统一显示为中文「最近」，避免界面出现英文。
 String albumDisplayName(pm.AssetPathEntity album) =>
     album.isAll ? '最近' : album.name;
+
+/// 视频时长角标：半透明深色底 + 播放三角 + 「m:ss」。
+///
+/// 深色底与浅色图标不随主题切换（媒体信息浮层的通用惯例，
+/// 保证任意缩略图上的可读性）。
+class _VideoDurationBadge extends StatelessWidget {
+  final Duration duration;
+
+  const _VideoDurationBadge({required this.duration});
+
+  @override
+  Widget build(BuildContext context) {
+    final String? label = formatDuration(duration);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(Icons.play_arrow, size: 12, color: Colors.white),
+          if (label != null) ...<Widget>[
+            const SizedBox(width: 2),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
 
 /// 相册 / 资产浏览 UI（只读枚举，不拷贝）。
 ///
@@ -312,7 +352,7 @@ class _AlbumBrowserState extends ConsumerState<AlbumBrowser>
             },
             child: widget.grouped.isEmpty
                 ? const Center(
-                    child: Text('该相册暂无图片，或尚未授权。'))
+                    child: Text('该相册暂无媒体，或尚未授权。'))
                 : CustomScrollView(
                     key: _scrollViewKey,
                     controller: _scrollController,
@@ -348,7 +388,7 @@ class _AlbumBrowserState extends ConsumerState<AlbumBrowser>
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                '${entry.value.length}张',
+                                '${entry.value.length}项',
                                 style: TextStyle(
                                   color: Theme.of(context)
                                       .colorScheme
@@ -459,6 +499,17 @@ class _AlbumBrowserState extends ConsumerState<AlbumBrowser>
                                       ),
                                     ),
                                   ),
+                                  // 视频角标：左下角播放图标 + 时长
+                                  // （Google 相册语义：时长在右下角，此处避开
+                                  // 右上角选择按钮，放右下角）。
+                                  if (asset.type == pm.AssetType.video)
+                                    Positioned(
+                                      bottom: 4,
+                                      right: 4,
+                                      child: _VideoDurationBadge(
+                                        duration: asset.videoDuration,
+                                      ),
+                                    ),
                                 ],
                               );
                             },

@@ -156,6 +156,35 @@ class SettingsPage extends ConsumerWidget {
               ],
             ),
           ),
+          // 分类排序（本期增强）：手动拖拽 / 名称升序 / 名称降序，
+          // 全局生效（相册筛选条、搜索下拉、分类管理页、分配面板一致）。
+          ListTile(
+            title: const Text('分类排序'),
+            subtitle: const Text('选择筛选条与分类管理页中分类的排列方式'),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: SegmentedButton<String>(
+              selected: <String>{settings.categorySortMode},
+              onSelectionChanged: (Set<String> sel) => ref
+                  .read(settingsProvider.notifier)
+                  .setCategorySortMode(sel.first),
+              segments: const <ButtonSegment<String>>[
+                ButtonSegment<String>(
+                  value: kCategorySortManual,
+                  label: Text('手动'),
+                ),
+                ButtonSegment<String>(
+                  value: kCategorySortNameAsc,
+                  label: Text('名称 A→Z'),
+                ),
+                ButtonSegment<String>(
+                  value: kCategorySortNameDesc,
+                  label: Text('名称 Z→A'),
+                ),
+              ],
+            ),
+          ),
           // 手势引导（R13）：首次进入相册页自动弹出，此处可重看。
           ListTile(
             leading: const Icon(Icons.touch_app_outlined),
@@ -229,7 +258,7 @@ class SettingsPage extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('关于'),
-            subtitle: const Text('work_photos · 引用式照片管理 · v1.2.1'),
+            subtitle: const Text('work_photos · 引用式照片管理 · v1.3.0'),
           ),
         ],
       ),

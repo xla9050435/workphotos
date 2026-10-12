@@ -7,6 +7,7 @@ import 'package:photo_manager/photo_manager.dart' as pm;
 import 'package:photo_view/photo_view.dart';
 
 import 'package:work_photos/data/models/photo.dart';
+import 'package:work_photos/features/detail/video_pane.dart';
 import 'package:work_photos/features/share/share_panel.dart';
 import 'package:work_photos/providers/photo_provider.dart';
 import 'package:work_photos/widgets/status_badge.dart';
@@ -191,44 +192,61 @@ class _Body extends ConsumerWidget {
         Expanded(
           child: Stack(
             children: <Widget>[
-              FutureBuilder<File?>(
-                future: photo.resolveFile(),
-                builder: (BuildContext ctx, AsyncSnapshot<File?> snap) {
-                  if (snap.connectionState != ConnectionState.done) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final File? file = snap.data;
-                  final Widget img = file == null
-                      // 失效引用降级：展示缩略图占位。
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              // 注意：photo 是运行时传入的值，不是编译期常量，故不能用 const。
-                              PhotoThumbnail(photo: photo, size: 400),
-                              const SizedBox(height: 8),
-                              Text('源文件缺失，已降级显示缩略图占位',
-                                  style: TextStyle(color: scheme.onSurfaceVariant)),
-                            ],
-                          ),
-                        )
-                      : PhotoView(
-                          imageProvider: FileImage(file),
-                          scaleStateController: scaleStateController,
-                        );
-                  // 全屏手势层：下拉跟手进全屏、上滑退出、全屏态轻点退出。
-                  // 必须用 Listener（原始指针）而非 GestureDetector：
-                  // PhotoView 的缩放/平移手势识别器会在手势竞技场中胜出并
-                  // 消费垂直拖动，导致外层 onVerticalDrag* 几乎无法触发；
-                  // Listener 不参与手势竞技，指针事件必然送达。
-                  return _SwipeLayer(
-                    fullscreen: fullscreen,
-                    onToggleFullscreen: onToggleFullscreen,
-                    scaleStateController: scaleStateController,
-                    child: img,
-                  );
-                },
-              ),
+              // 视频：不经 PhotoView，直接进播放面板。
+              //
+              // 两个要点：
+              // 1) 视频分支必须放在 FutureBuilder **外层**——VideoPane 内部
+              //    自己会 resolveFile，套在 FutureBuilder 里会让每次 rebuild
+              //    都多发起一次文件解析（IO 往返）；
+              // 2) 视频不走 PhotoView，因此 scaleStateController 的
+              //    scaleState 恒为 initial（或 null），_SwipeLayer 的
+              //    「放大态不触发全屏手势」判定不会被误命中，手势照常生效。
+              if (photo.isVideo)
+                _SwipeLayer(
+                  fullscreen: fullscreen,
+                  onToggleFullscreen: onToggleFullscreen,
+                  scaleStateController: scaleStateController,
+                  child: VideoPane(photo: photo),
+                )
+              else
+                FutureBuilder<File?>(
+                  future: photo.resolveFile(),
+                  builder: (BuildContext ctx, AsyncSnapshot<File?> snap) {
+                    if (snap.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final File? file = snap.data;
+                    final Widget img = file == null
+                        // 失效引用降级：展示缩略图占位。
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                // 注意：photo 是运行时传入的值，不是编译期常量，故不能用 const。
+                                PhotoThumbnail(photo: photo, size: 400),
+                                const SizedBox(height: 8),
+                                Text('源文件缺失，已降级显示缩略图占位',
+                                    style: TextStyle(color: scheme.onSurfaceVariant)),
+                              ],
+                            ),
+                          )
+                        : PhotoView(
+                            imageProvider: FileImage(file),
+                            scaleStateController: scaleStateController,
+                          );
+                    // 全屏手势层：下拉跟手进全屏、上滑退出、全屏态轻点退出。
+                    // 必须用 Listener（原始指针）而非 GestureDetector：
+                    // PhotoView 的缩放/平移手势识别器会在手势竞技场中胜出并
+                    // 消费垂直拖动，导致外层 onVerticalDrag* 几乎无法触发；
+                    // Listener 不参与手势竞技，指针事件必然送达。
+                    return _SwipeLayer(
+                      fullscreen: fullscreen,
+                      onToggleFullscreen: onToggleFullscreen,
+                      scaleStateController: scaleStateController,
+                      child: img,
+                    );
+                  },
+                ),
               if (fullscreen)
                 Positioned(
                   top: 8,
@@ -391,6 +409,9 @@ class _MetaInfo extends StatelessWidget {
         final _MetaDetail? d = snap.data;
         final List<List<String>> rows = <List<String>>[
           if (d?.date != null) <String>['拍摄时间', d!.date!],
+          // 视频时长（导入时入库，无需解析实体）。
+          if (photo.isVideo && photo.durationLabel != null)
+            <String>['时长', photo.durationLabel!],
           if (d?.dimension != null) <String>['尺寸', d!.dimension!],
           if (d?.size != null) <String>['文件大小', d!.size!],
           if (d?.mime != null) <String>['类型', d!.mime!],

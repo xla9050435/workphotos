@@ -120,6 +120,36 @@ class PhotoGridItem extends ConsumerWidget {
                 ),
               ),
             ),
+          // 视频角标：右下角播放图标 + 时长（与左下角备注图标错开）。
+          if (photo.isVideo)
+            Positioned(
+              bottom: 4,
+              right: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const Icon(Icons.play_arrow, size: 12, color: Colors.white),
+                    if (photo.durationLabel != null) ...<Widget>[
+                      const SizedBox(width: 2),
+                      Text(
+                        photo.durationLabel!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );

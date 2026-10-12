@@ -99,8 +99,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final SearchQuery query = ref.watch(searchQueryProvider);
+    // 原始流：仅用于判断是否仍在加载 / 加载失败。
     final AsyncValue<List<Category>> catsAsync =
         ref.watch(categoryListProvider);
+    // 下拉候选：跟随全局分类排序模式（与筛选条 / 分类管理页一致）。
+    final List<Category> cats = ref.watch(sortedCategoryListProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('搜索')),
@@ -152,14 +155,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                         value: null,
                         child: Text('全部分类'),
                       ),
-                      ...catsAsync.when(
-                        data: (List<Category> cats) => <DropdownMenuItem<int?>>[
-                          for (final Category c in cats)
-                            DropdownMenuItem<int?>(value: c.id, child: Text(c.name)),
-                        ],
-                        loading: () => const <DropdownMenuItem<int?>>[],
-                        error: (_, __) => const <DropdownMenuItem<int?>>[],
-                      ),
+                      // 加载中 / 出错时不渲染任何分类项，避免列表短暂为空
+                      // 被读成「没有分类」；正常加载后按排序后的顺序渲染。
+                      if (!catsAsync.isLoading && !catsAsync.hasError)
+                        for (final Category c in cats)
+                          DropdownMenuItem<int?>(
+                              value: c.id, child: Text(c.name)),
                     ],
                     onChanged: (int? v) {
                       ref.read(searchQueryProvider.notifier).state =
@@ -315,12 +316,26 @@ class _SearchResultTile extends StatelessWidget {
         height: 56,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: PhotoThumbnail(photo: photo, size: 200),
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              PhotoThumbnail(photo: photo, size: 200),
+              // 视频标识：右下角播放小三角（搜索结果混排时区分类型）。
+              if (photo.isVideo)
+                const Positioned(
+                  right: 3,
+                  bottom: 3,
+                  child: Icon(Icons.play_circle_filled,
+                      size: 16, color: Colors.white),
+                ),
+            ],
+          ),
         ),
       ),
       title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        '$dateLabel · ${photo.isUsed ? '已用' : '未用'}'
+        '$dateLabel${photo.isVideo && photo.durationLabel != null ? ' · 视频 ${photo.durationLabel}' : ''}'
+        ' · ${photo.isUsed ? '已用' : '未用'}'
         '${photo.sourceAlbum != null && title != photo.sourceAlbum ? ' · ${photo.sourceAlbum}' : ''}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,

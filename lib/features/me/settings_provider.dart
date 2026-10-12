@@ -27,6 +27,14 @@ const String kLocaleModeSystem = 'system';
 const String kLocaleModeZh = 'zh';
 const String kLocaleModeEn = 'en';
 
+/// 分类排序模式取值（R-新功能：按名称排序分类）。
+/// - 'manual'：手动拖拽顺序（分类管理页持久化的 sortOrder）；
+/// - 'nameAsc'：按名称升序（默认）；
+/// - 'nameDesc'：按名称降序。
+const String kCategorySortManual = 'manual';
+const String kCategorySortNameAsc = 'nameAsc';
+const String kCategorySortNameDesc = 'nameDesc';
+
 /// [AppSettings.localeMode] → [Locale]（null = 跟随系统，交给框架解析）。
 Locale? localeFromMode(String mode) {
   switch (mode) {
@@ -54,6 +62,10 @@ class AppSettings {
   /// ColorScheme.fromSeed 生成；设置页「主题颜色」点选。
   final String themeSeedHex;
 
+  /// 分类排序模式：'manual' 手动拖拽 / 'nameAsc' 名称升序（默认）/
+  /// 'nameDesc' 名称降序。相册筛选条、分类管理页等全局生效。
+  final String categorySortMode;
+
   const AppSettings({
     this.groupByDay = true,
     this.usedBorderHex = '#2E7D32',
@@ -61,6 +73,7 @@ class AppSettings {
     this.gridColumns = kDefaultGridColumns,
     this.localeMode = kLocaleModeSystem,
     this.themeSeedHex = '#2E7D32',
+    this.categorySortMode = kCategorySortNameAsc,
   });
 
   AppSettings copyWith({
@@ -70,6 +83,7 @@ class AppSettings {
     int? gridColumns,
     String? localeMode,
     String? themeSeedHex,
+    String? categorySortMode,
   }) =>
       AppSettings(
         groupByDay: groupByDay ?? this.groupByDay,
@@ -78,6 +92,7 @@ class AppSettings {
         gridColumns: gridColumns ?? this.gridColumns,
         localeMode: localeMode ?? this.localeMode,
         themeSeedHex: themeSeedHex ?? this.themeSeedHex,
+        categorySortMode: categorySortMode ?? this.categorySortMode,
       );
 }
 
@@ -93,6 +108,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   static const String _kGridColumns = 'grid_columns';
   static const String _kLocaleMode = 'locale_mode';
   static const String _kThemeSeedHex = 'theme_seed_hex';
+  static const String _kCategorySortMode = 'category_sort_mode';
 
   Future<void> _load() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -127,6 +143,18 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     final String? seed = prefs.getString(_kThemeSeedHex);
     if (seed != null && seed.isNotEmpty && mounted) {
       state = state.copyWith(themeSeedHex: seed);
+    }
+    final String? sortMode = prefs.getString(_kCategorySortMode);
+    if (sortMode != null && mounted) {
+      // 脏值兜底：非法存储值回退名称升序。
+      const List<String> validSort = <String>[
+        kCategorySortManual,
+        kCategorySortNameAsc,
+        kCategorySortNameDesc,
+      ];
+      if (validSort.contains(sortMode)) {
+        state = state.copyWith(categorySortMode: sortMode);
+      }
     }
   }
 
@@ -171,6 +199,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     state = state.copyWith(themeSeedHex: hex);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kThemeSeedHex, hex);
+  }
+
+  /// 设置分类排序模式（'manual' / 'nameAsc' / 'nameDesc'）。
+  Future<void> setCategorySortMode(String mode) async {
+    state = state.copyWith(categorySortMode: mode);
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kCategorySortMode, mode);
   }
 }
 
