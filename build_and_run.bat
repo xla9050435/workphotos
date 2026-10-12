@@ -220,14 +220,14 @@ echo       This scans every Dart file in lib\ and writes
 echo       lib\data\db\app_database.g.dart
 echo       The first run can take 1-3 minutes.
 call :begin_step "5/6" "build_runner (dart run)"
-call dart run build_runner build --delete-conflicting-outputs >>"%STEP_LOG%" 2>&1
+call dart run build_runner build >>"%STEP_LOG%" 2>&1
 call :end_step
 if "%RC%"=="0" goto :step5_ok
 echo(
 echo       'dart run build_runner' returned %RC%. Trying the older
 echo       command 'flutter pub run build_runner' before giving up...
 call :begin_step "5/6" "build_runner (flutter pub run, fallback)"
-call flutter pub run build_runner build --delete-conflicting-outputs >>"%STEP_LOG%" 2>&1
+call flutter pub run build_runner build >>"%STEP_LOG%" 2>&1
 call :end_step
 if not "%RC%"=="0" goto :fail_codegen
 :step5_ok

@@ -68,7 +68,7 @@ class _AssetInfoSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(widget.entity.type == pm.AssetType.video ? '视频信息' : '照片信息',
+            Text(entity.type == pm.AssetType.video ? '视频信息' : '照片信息',
                 style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             FutureBuilder<_InfoData>(

@@ -61,6 +61,30 @@ class $PhotosTable extends Photos with TableInfo<$PhotosTable, PhotoRow> {
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _mediaTypeMeta =
+      const VerificationMeta('mediaType');
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+      'media_type', aliasedName, false,
+      type: DriftSqlType.string,
+      requiredDuringInsert: false,
+      defaultValue: const Constant('image'));
+  static const VerificationMeta _durationMsMeta =
+      const VerificationMeta('durationMs');
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+      'duration_ms', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _widthMeta = const VerificationMeta('width');
+  @override
+  late final GeneratedColumn<int> width = GeneratedColumn<int>(
+      'width', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _heightMeta = const VerificationMeta('height');
+  @override
+  late final GeneratedColumn<int> height = GeneratedColumn<int>(
+      'height', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
@@ -83,6 +107,10 @@ class $PhotosTable extends Photos with TableInfo<$PhotosTable, PhotoRow> {
         note,
         sourceAlbum,
         syncState,
+        mediaType,
+        durationMs,
+        width,
+        height,
         createdAt,
         updatedAt
       ];
@@ -139,6 +167,24 @@ class $PhotosTable extends Photos with TableInfo<$PhotosTable, PhotoRow> {
       context.handle(_syncStateMeta,
           syncState.isAcceptableOrUnknown(data['sync_state']!, _syncStateMeta));
     }
+    if (data.containsKey('media_type')) {
+      context.handle(_mediaTypeMeta,
+          mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta));
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+          _durationMsMeta,
+          durationMs.isAcceptableOrUnknown(
+              data['duration_ms']!, _durationMsMeta));
+    }
+    if (data.containsKey('width')) {
+      context.handle(
+          _widthMeta, width.isAcceptableOrUnknown(data['width']!, _widthMeta));
+    }
+    if (data.containsKey('height')) {
+      context.handle(_heightMeta,
+          height.isAcceptableOrUnknown(data['height']!, _heightMeta));
+    }
     if (data.containsKey('created_at')) {
       context.handle(_createdAtMeta,
           createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
@@ -176,6 +222,14 @@ class $PhotosTable extends Photos with TableInfo<$PhotosTable, PhotoRow> {
           .read(DriftSqlType.string, data['${effectivePrefix}source_album']),
       syncState: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}sync_state'])!,
+      mediaType: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}media_type'])!,
+      durationMs: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}duration_ms']),
+      width: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}width']),
+      height: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}height']),
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       updatedAt: attachedDatabase.typeMapping
@@ -200,6 +254,16 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
   final String? note;
   final String? sourceAlbum;
   final int syncState;
+
+  /// 媒体类型：'image' | 'video'（视频支持新增，默认 image 兼容历史数据）。
+  final String mediaType;
+
+  /// 视频时长（毫秒）；图片为 null。由导入时从 AssetEntity 提取。
+  final int? durationMs;
+
+  /// 媒体宽高（像素）；解析失败为 null。视频详情页展示分辨率用。
+  final int? width;
+  final int? height;
   final DateTime createdAt;
   final DateTime updatedAt;
   const PhotoRow(
@@ -211,6 +275,10 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
       this.note,
       this.sourceAlbum,
       required this.syncState,
+      required this.mediaType,
+      this.durationMs,
+      this.width,
+      this.height,
       required this.createdAt,
       required this.updatedAt});
   @override
@@ -230,6 +298,16 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
       map['source_album'] = Variable<String>(sourceAlbum);
     }
     map['sync_state'] = Variable<int>(syncState);
+    map['media_type'] = Variable<String>(mediaType);
+    if (!nullToAbsent || durationMs != null) {
+      map['duration_ms'] = Variable<int>(durationMs);
+    }
+    if (!nullToAbsent || width != null) {
+      map['width'] = Variable<int>(width);
+    }
+    if (!nullToAbsent || height != null) {
+      map['height'] = Variable<int>(height);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -248,6 +326,14 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
           ? const Value.absent()
           : Value(sourceAlbum),
       syncState: Value(syncState),
+      mediaType: Value(mediaType),
+      durationMs: durationMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(durationMs),
+      width:
+          width == null && nullToAbsent ? const Value.absent() : Value(width),
+      height:
+          height == null && nullToAbsent ? const Value.absent() : Value(height),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -265,6 +351,10 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
       note: serializer.fromJson<String?>(json['note']),
       sourceAlbum: serializer.fromJson<String?>(json['sourceAlbum']),
       syncState: serializer.fromJson<int>(json['syncState']),
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      durationMs: serializer.fromJson<int?>(json['durationMs']),
+      width: serializer.fromJson<int?>(json['width']),
+      height: serializer.fromJson<int?>(json['height']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -281,6 +371,10 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
       'note': serializer.toJson<String?>(note),
       'sourceAlbum': serializer.toJson<String?>(sourceAlbum),
       'syncState': serializer.toJson<int>(syncState),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'durationMs': serializer.toJson<int?>(durationMs),
+      'width': serializer.toJson<int?>(width),
+      'height': serializer.toJson<int?>(height),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -295,6 +389,10 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
           Value<String?> note = const Value.absent(),
           Value<String?> sourceAlbum = const Value.absent(),
           int? syncState,
+          String? mediaType,
+          Value<int?> durationMs = const Value.absent(),
+          Value<int?> width = const Value.absent(),
+          Value<int?> height = const Value.absent(),
           DateTime? createdAt,
           DateTime? updatedAt}) =>
       PhotoRow(
@@ -306,6 +404,10 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
         note: note.present ? note.value : this.note,
         sourceAlbum: sourceAlbum.present ? sourceAlbum.value : this.sourceAlbum,
         syncState: syncState ?? this.syncState,
+        mediaType: mediaType ?? this.mediaType,
+        durationMs: durationMs.present ? durationMs.value : this.durationMs,
+        width: width.present ? width.value : this.width,
+        height: height.present ? height.value : this.height,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -325,6 +427,11 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
       sourceAlbum:
           data.sourceAlbum.present ? data.sourceAlbum.value : this.sourceAlbum,
       syncState: data.syncState.present ? data.syncState.value : this.syncState,
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      durationMs:
+          data.durationMs.present ? data.durationMs.value : this.durationMs,
+      width: data.width.present ? data.width.value : this.width,
+      height: data.height.present ? data.height.value : this.height,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -341,6 +448,10 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
           ..write('note: $note, ')
           ..write('sourceAlbum: $sourceAlbum, ')
           ..write('syncState: $syncState, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('width: $width, ')
+          ..write('height: $height, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -348,8 +459,21 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, mediaRefValue, mediaRefType, title,
-      usedStatus, note, sourceAlbum, syncState, createdAt, updatedAt);
+  int get hashCode => Object.hash(
+      id,
+      mediaRefValue,
+      mediaRefType,
+      title,
+      usedStatus,
+      note,
+      sourceAlbum,
+      syncState,
+      mediaType,
+      durationMs,
+      width,
+      height,
+      createdAt,
+      updatedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -362,6 +486,10 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
           other.note == this.note &&
           other.sourceAlbum == this.sourceAlbum &&
           other.syncState == this.syncState &&
+          other.mediaType == this.mediaType &&
+          other.durationMs == this.durationMs &&
+          other.width == this.width &&
+          other.height == this.height &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -375,6 +503,10 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
   final Value<String?> note;
   final Value<String?> sourceAlbum;
   final Value<int> syncState;
+  final Value<String> mediaType;
+  final Value<int?> durationMs;
+  final Value<int?> width;
+  final Value<int?> height;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   const PhotosCompanion({
@@ -386,6 +518,10 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
     this.note = const Value.absent(),
     this.sourceAlbum = const Value.absent(),
     this.syncState = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.width = const Value.absent(),
+    this.height = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
@@ -398,6 +534,10 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
     this.note = const Value.absent(),
     this.sourceAlbum = const Value.absent(),
     this.syncState = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.width = const Value.absent(),
+    this.height = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
   })  : mediaRefValue = Value(mediaRefValue),
@@ -413,6 +553,10 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
     Expression<String>? note,
     Expression<String>? sourceAlbum,
     Expression<int>? syncState,
+    Expression<String>? mediaType,
+    Expression<int>? durationMs,
+    Expression<int>? width,
+    Expression<int>? height,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
   }) {
@@ -425,6 +569,10 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
       if (note != null) 'note': note,
       if (sourceAlbum != null) 'source_album': sourceAlbum,
       if (syncState != null) 'sync_state': syncState,
+      if (mediaType != null) 'media_type': mediaType,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (width != null) 'width': width,
+      if (height != null) 'height': height,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
@@ -439,6 +587,10 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
       Value<String?>? note,
       Value<String?>? sourceAlbum,
       Value<int>? syncState,
+      Value<String>? mediaType,
+      Value<int?>? durationMs,
+      Value<int?>? width,
+      Value<int?>? height,
       Value<DateTime>? createdAt,
       Value<DateTime>? updatedAt}) {
     return PhotosCompanion(
@@ -450,6 +602,10 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
       note: note ?? this.note,
       sourceAlbum: sourceAlbum ?? this.sourceAlbum,
       syncState: syncState ?? this.syncState,
+      mediaType: mediaType ?? this.mediaType,
+      durationMs: durationMs ?? this.durationMs,
+      width: width ?? this.width,
+      height: height ?? this.height,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -482,6 +638,18 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
     if (syncState.present) {
       map['sync_state'] = Variable<int>(syncState.value);
     }
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (width.present) {
+      map['width'] = Variable<int>(width.value);
+    }
+    if (height.present) {
+      map['height'] = Variable<int>(height.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -502,6 +670,10 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
           ..write('note: $note, ')
           ..write('sourceAlbum: $sourceAlbum, ')
           ..write('syncState: $syncState, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('width: $width, ')
+          ..write('height: $height, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1213,6 +1385,10 @@ typedef $$PhotosTableCreateCompanionBuilder = PhotosCompanion Function({
   Value<String?> note,
   Value<String?> sourceAlbum,
   Value<int> syncState,
+  Value<String> mediaType,
+  Value<int?> durationMs,
+  Value<int?> width,
+  Value<int?> height,
   required DateTime createdAt,
   required DateTime updatedAt,
 });
@@ -1225,6 +1401,10 @@ typedef $$PhotosTableUpdateCompanionBuilder = PhotosCompanion Function({
   Value<String?> note,
   Value<String?> sourceAlbum,
   Value<int> syncState,
+  Value<String> mediaType,
+  Value<int?> durationMs,
+  Value<int?> width,
+  Value<int?> height,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
 });
@@ -1261,6 +1441,18 @@ class $$PhotosTableFilterComposer
 
   ColumnFilters<int> get syncState => $composableBuilder(
       column: $table.syncState, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+      column: $table.durationMs, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get width => $composableBuilder(
+      column: $table.width, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get height => $composableBuilder(
+      column: $table.height, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
@@ -1304,6 +1496,18 @@ class $$PhotosTableOrderingComposer
   ColumnOrderings<int> get syncState => $composableBuilder(
       column: $table.syncState, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+      column: $table.mediaType, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+      column: $table.durationMs, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get width => $composableBuilder(
+      column: $table.width, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get height => $composableBuilder(
+      column: $table.height, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
 
@@ -1344,6 +1548,18 @@ class $$PhotosTableAnnotationComposer
   GeneratedColumn<int> get syncState =>
       $composableBuilder(column: $table.syncState, builder: (column) => column);
 
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+      column: $table.durationMs, builder: (column) => column);
+
+  GeneratedColumn<int> get width =>
+      $composableBuilder(column: $table.width, builder: (column) => column);
+
+  GeneratedColumn<int> get height =>
+      $composableBuilder(column: $table.height, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -1382,6 +1598,10 @@ class $$PhotosTableTableManager extends RootTableManager<
             Value<String?> note = const Value.absent(),
             Value<String?> sourceAlbum = const Value.absent(),
             Value<int> syncState = const Value.absent(),
+            Value<String> mediaType = const Value.absent(),
+            Value<int?> durationMs = const Value.absent(),
+            Value<int?> width = const Value.absent(),
+            Value<int?> height = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
           }) =>
@@ -1394,6 +1614,10 @@ class $$PhotosTableTableManager extends RootTableManager<
             note: note,
             sourceAlbum: sourceAlbum,
             syncState: syncState,
+            mediaType: mediaType,
+            durationMs: durationMs,
+            width: width,
+            height: height,
             createdAt: createdAt,
             updatedAt: updatedAt,
           ),
@@ -1406,6 +1630,10 @@ class $$PhotosTableTableManager extends RootTableManager<
             Value<String?> note = const Value.absent(),
             Value<String?> sourceAlbum = const Value.absent(),
             Value<int> syncState = const Value.absent(),
+            Value<String> mediaType = const Value.absent(),
+            Value<int?> durationMs = const Value.absent(),
+            Value<int?> width = const Value.absent(),
+            Value<int?> height = const Value.absent(),
             required DateTime createdAt,
             required DateTime updatedAt,
           }) =>
@@ -1418,6 +1646,10 @@ class $$PhotosTableTableManager extends RootTableManager<
             note: note,
             sourceAlbum: sourceAlbum,
             syncState: syncState,
+            mediaType: mediaType,
+            durationMs: durationMs,
+            width: width,
+            height: height,
             createdAt: createdAt,
             updatedAt: updatedAt,
           ),

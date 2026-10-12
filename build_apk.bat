@@ -184,14 +184,14 @@ call :end_step
 if not "%RC%"=="0" goto :fail_pubget
 
 call :begin_step "3/4" "build_runner (dart run)"
-call dart run build_runner build --delete-conflicting-outputs >>"%STEP_LOG%" 2>&1
+call dart run build_runner build >>"%STEP_LOG%" 2>&1
 call :end_step
 if "%RC%"=="0" goto :step3_ok
 echo(
 echo       'dart run build_runner' returned %RC%. Trying the older
 echo       command 'flutter pub run build_runner' before giving up...
 call :begin_step "3/4" "build_runner (flutter pub run, fallback)"
-call flutter pub run build_runner build --delete-conflicting-outputs >>"%STEP_LOG%" 2>&1
+call flutter pub run build_runner build >>"%STEP_LOG%" 2>&1
 call :end_step
 if not "%RC%"=="0" goto :fail_codegen
 :step3_ok
