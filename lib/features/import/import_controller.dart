@@ -15,14 +15,23 @@ class ImportController {
 
   ImportController(this._repository);
 
-  /// 引用式导入：仅记录 AssetEntity.id 与元数据，绝不复制字节。
+  /// 引用式导入，**返回成功导入的照片 id 列表**（供导入后立即分配分类）。
   ///
-  /// 返回成功导入的记录数。
-  Future<int> importAssets(List<pm.AssetEntity> entities,
+  /// 为什么加这个「返回 ids」的版本，而不是改 [importAssets] 原签名：原方法
+  /// 返回条数、被快速导入面板等调用；改签名会波及调用点。新增方法、让原方法
+  /// 委托取 length，调用点零改动。
+  Future<List<int>> importAssetsReturningIds(List<pm.AssetEntity> entities,
       {String? album}) async {
     final List<ImportItem> items = entities.map(_toItem).toList();
-    return _repository.importFromAlbum(items, album: album);
+    return _repository.importFromAlbumIds(items, album: album);
   }
+
+  /// 引用式导入：仅记录 AssetEntity.id 与元数据，绝不复制字节。
+  ///
+  /// 返回成功导入的记录数。委托 [importAssetsReturningIds]，保持原签名不变。
+  Future<int> importAssets(List<pm.AssetEntity> entities,
+          {String? album}) async =>
+      (await importAssetsReturningIds(entities, album: album)).length;
 
   /// [pm.AssetEntity] → [ImportItem]。
   ///

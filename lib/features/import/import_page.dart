@@ -480,47 +480,65 @@ class _ImportPageState extends ConsumerState<ImportPage>
     }
   }
 
-  /// 相机快捷入口：拉起系统相机 → 拍完刷新 → 按时间戳筛选本次新增 → 快速导入弹窗。
+  /// 拉起相机并返回本次拍摄新增的媒体（按时间戳筛选）。
   ///
-  /// 为什么用「时间戳筛选」而不是「总数差」判断新增：
-  /// 相册随时可能被其它应用并发写入（别的 App 也在拍照），「相册总数前后差」
-  /// 会把别人的新增也算成本次拍摄，导致误判导入范围；而本次拍摄的
-  /// `createDateTime` 必然晚于拍摄前记录的基线，逐项按时间戳筛选更精确、
-  /// 可解释，也不受并发写入干扰。基线前置 2 秒容差，用于吸收设备时钟精度与
-  /// 文件写入/入库的延迟。
-  Future<void> _openCameraAndQuickImport() async {
+  /// 首次拍照（[_openCameraAndQuickImport]）与面板的「继续拍摄」（[_onCaptureMore]）
+  /// 共用此方法，避免两份「拉起相机 + 增量扫描」逻辑漂移。
+  ///
+  /// 返回值用记录区分三种情形，便于调用方决定提示方式：
+  /// - `captured == false`：用户取消 / 无相机 / 失败（不提示）；
+  /// - `captured == true && assets.isEmpty`：拍到了但未识别到新增（可提示稍后重试）；
+  /// - `captured == true && assets.isNotEmpty`：正常拿到新增项。
+  ///
+  /// 为什么用「时间戳筛选」而不是「总数差」判断新增：相册随时可能被其它应用
+  /// 并发写入（别的 App 也在拍照），「相册总数前后差」会把别人的新增也算成本次
+  /// 拍摄，导致误判范围；而本次拍摄的 `createDateTime` 必然晚于拍摄前记录的基线，
+  /// 逐项按时间戳筛选更精确、可解释，也不受并发写入干扰。基线前置 2 秒容差，
+  /// 用于吸收设备时钟精度与文件写入/入库的延迟。
+  Future<({bool captured, List<pm.AssetEntity> assets})> _captureOnce() async {
     // 保障写入公共 DCIM 所需的存储权限（不阻断流程）：
     // - Android 9 及以下（API<=28）必须 WRITE_EXTERNAL_STORAGE 才能创建输出文件；
     // - 它与 READ 同属 STORAGE 组，若 READ 已授予，本次请求会静默自动授予（无弹窗）；
     // - 新系统上 Permission.storage 已废弃，请求直接返回 denied，无副作用。
-    // 用户拒绝时拍照会失败并被静默忽略，不影响其余功能。
     await Permission.storage.request();
-    if (!mounted) return;
+    if (!mounted) return (captured: false, assets: const <pm.AssetEntity>[]);
 
     // 拍摄前记录时间基线（2 秒容差：防设备时钟与写入延迟）。
     final DateTime since =
         DateTime.now().subtract(const Duration(seconds: 2));
 
     final bool captured = await CameraLauncher.capturePhoto();
-    if (!mounted) return;
-    if (!captured) return; // 用户取消 / 无相机 / 失败：静默返回。
+    if (!mounted) return (captured: false, assets: const <pm.AssetEntity>[]);
+    if (!captured) {
+      return (captured: false, assets: const <pm.AssetEntity>[]);
+    }
 
     // 刷新相册列表与当前相册第 0 页（相机已把文件写入 MediaStore）。
     await _loadAlbums();
-    if (!mounted) return;
+    if (!mounted) return (captured: true, assets: const <pm.AssetEntity>[]);
 
     final pm.AssetPathEntity? album = _currentAlbum;
-    if (album == null) return;
+    if (album == null) {
+      return (captured: true, assets: const <pm.AssetEntity>[]);
+    }
 
     // 重新取第 0 页（最新 size 项），筛出拍摄时间晚于基线的项。
     final List<pm.AssetEntity> page0 =
         await album.getAssetListPaged(page: 0, size: 50);
+    if (!mounted) return (captured: true, assets: const <pm.AssetEntity>[]);
     final List<pm.AssetEntity> fresh = page0
         .where((pm.AssetEntity a) => a.createDateTime.isAfter(since))
         .toList();
-    if (!mounted) return;
+    return (captured: true, assets: fresh);
+  }
 
-    if (fresh.isEmpty) {
+  /// 相机快捷入口：拍一张 → 识别新增 → 弹出「快速导入」面板。
+  Future<void> _openCameraAndQuickImport() async {
+    final ({bool captured, List<pm.AssetEntity> assets}) r =
+        await _captureOnce();
+    if (!mounted) return;
+    if (!r.captured) return; // 用户取消 / 无相机 / 失败：静默返回。
+    if (r.assets.isEmpty) {
       // 可能是媒体库尚未索引完成：提示用户稍后刷新重试。
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -530,10 +548,12 @@ class _ImportPageState extends ConsumerState<ImportPage>
       return;
     }
 
+    final pm.AssetPathEntity? album = _currentAlbum;
     final int? imported = await showQuickImportSheet(
       context,
-      assets: fresh,
-      albumLabel: albumDisplayName(album),
+      assets: r.assets,
+      albumLabel: album == null ? null : albumDisplayName(album),
+      onCaptureMore: _onCaptureMore,
     );
     if (!mounted) return;
     if (imported != null && imported > 0) {
@@ -543,6 +563,23 @@ class _ImportPageState extends ConsumerState<ImportPage>
       // 再刷一次，确保导入后列表状态最新。
       await _loadAlbums();
     }
+  }
+
+  /// 「继续拍摄」回调：再拉一次相机并返回新增项；取消 / 未识别返回 null。
+  Future<List<pm.AssetEntity>?> _onCaptureMore() async {
+    final ({bool captured, List<pm.AssetEntity> assets}) r =
+        await _captureOnce();
+    if (!mounted) return null;
+    if (!r.captured) return null; // 取消：面板保持不变。
+    if (r.assets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('未识别到本次新增的媒体（可能仍在写入相册，稍后重试）'),
+        ),
+      );
+      return null;
+    }
+    return r.assets;
   }
 
   @override

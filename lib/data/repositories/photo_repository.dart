@@ -19,13 +19,16 @@ class PhotoRepository {
   /// 构造时注入 [AppDatabase]（来自 [appDatabaseProvider]）。
   PhotoRepository(this._db);
 
-  /// 引用式批量导入：逐条插入媒体（绝不拷贝任何字节）。
+  /// 引用式批量导入，**返回成功插入的照片 id 列表**。
   ///
-  /// - [items]：待导入的媒体项（引用 + 类型 / 时长 / 尺寸元数据）。
-  /// - [album]：来源相册名（可选）。
-  /// 返回成功插入的记录数。
-  Future<int> importFromAlbum(List<ImportItem> items, {String? album}) async {
-    int inserted = 0;
+  /// 为什么加这个「返回 ids」的版本，而不是直接改 [importFromAlbum] 原签名：
+  /// 原方法返回 `int`（导入条数），被多处调用（相册导入确认、快速导入等）；
+  /// 改签名会波及所有调用点。新增一个独立方法、让原方法委托它取 length，
+  /// 既满足「导入后立即拿到 photo id 去分配分类」的新需求，又保证现有
+  /// 调用点零改动、行为不变。
+  Future<List<int>> importFromAlbumIds(List<ImportItem> items,
+      {String? album}) async {
+    final List<int> ids = <int>[];
     final DateTime now = DateTime.now();
     for (final ImportItem item in items) {
       final MediaRef ref = item.ref;
@@ -46,10 +49,14 @@ class PhotoRepository {
           updatedAt: now,
         ),
       );
-      if (id > 0) inserted++;
+      if (id > 0) ids.add(id);
     }
-    return inserted;
+    return ids;
   }
+
+  /// 引用式批量导入（返回条数）。委托 [importFromAlbumIds]，保持原签名不变。
+  Future<int> importFromAlbum(List<ImportItem> items, {String? album}) async =>
+      (await importFromAlbumIds(items, album: album)).length;
 
   /// 将照片归入某分类（重复忽略）。
   Future<void> assignCategory(int photoId, int categoryId) =>

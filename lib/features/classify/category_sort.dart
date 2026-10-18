@@ -130,3 +130,31 @@ Map<int, int> categoryDepthMap(List<Category> flat) {
   }
   return depth;
 }
+
+/// 自 [categoryId] 沿 [Category.parentId] 向上收集全部祖先 id（不含自身），
+/// 按由近到远返回；带环检测。
+///
+/// 抽成公共函数供「归入分类面板」与「快速导入面板」共用，避免两处各写一份
+/// 导致级联逻辑漂移。
+///
+/// 语义与终点：
+/// - 父节点不在 [flat] 中（父被删 / 数据脏）→ 停止上溯；
+/// - 防环：`visited` 从自身 id 起，沿 parentId 上溯遇到已访问 id 立即停止，
+///   避免脏数据（A→B→A、自环）导致死循环。
+List<int> categoryAncestorIds(List<Category> flat, int categoryId) {
+  final Map<int, Category> byId = <int, Category>{
+    for (final Category c in flat)
+      if (c.id != null) c.id!: c,
+  };
+  final List<int> ancestors = <int>[];
+  final Set<int> visited = <int>{categoryId};
+  int? pid = byId[categoryId]?.parentId;
+  while (pid != null && !visited.contains(pid)) {
+    visited.add(pid);
+    final Category? parent = byId[pid];
+    if (parent == null) break; // 父被删 / 数据脏：停止上溯。
+    ancestors.add(pid);
+    pid = parent.parentId;
+  }
+  return ancestors;
+}
