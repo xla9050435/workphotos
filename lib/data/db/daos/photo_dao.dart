@@ -144,7 +144,16 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
       final Expression<bool> un = _uncategorized();
       cond = cond == null ? un : (cond & un);
     }
-    if (cond != null) query.where(cond);
+    if (cond != null) {
+      // 两个 where 的签名不一样，别照抄：
+      // - JoinedSelectStatement.where(Expression<bool>)  → 收裸表达式
+      //   （上面 JOIN 分支与 search() 都是这种）
+      // - SimpleSelectStatement.where 继承自 Query.where
+      //   → 收 `Expression<bool> Function(Photos)`，只收「按表取表达式」的函数
+      // 这里谓词已经用 dao 自己的 photos 实例拼好了，包一层 lambda 传进去即可。
+      final Expression<bool> predicate = cond;
+      query.where((p) => predicate);
+    }
     query.orderBy(<OrderingTerm Function(Photos)>[
       (Photos p) =>
           OrderingTerm(expression: _shotOrCreated(p), mode: OrderingMode.desc),
