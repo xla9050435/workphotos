@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 路径映射（配合 AndroidManifest.xml 里的 provider 使用）。
+
+  相机快捷入口输出的文件落在公共 DCIM/WorkPhotos/，其绝对路径形如
+  /storage/emulated/0/DCIM/WorkPhotos/WP_xxx.jpg。
+
+  external-path 的 root 即 Environment.getExternalStorageDirectory()
+  （/storage/emulated/0），因此 path="DCIM/" 恰好覆盖到上面的目标目录。
+  若把文件改到别的目录，务必同步更新此处映射，否则 getUriForFile 会抛
+  IllegalArgumentException（"Failed to find configured root ..."）。
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path name="external_dcim" path="DCIM/" />
+</paths>

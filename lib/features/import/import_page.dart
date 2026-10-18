@@ -2,6 +2,7 @@ import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
 
 import 'package:work_photos/data/repositories/photo_repository.dart';
@@ -9,8 +10,10 @@ import 'package:work_photos/features/import/album_browser.dart';
 import 'package:work_photos/features/import/asset_sort.dart';
 import 'package:work_photos/features/import/asset_viewer.dart';
 import 'package:work_photos/features/import/import_controller.dart';
+import 'package:work_photos/features/import/quick_import_sheet.dart';
 import 'package:work_photos/features/me/settings_provider.dart';
 import 'package:work_photos/providers/photo_provider.dart';
+import 'package:work_photos/services/camera_launcher.dart';
 import 'package:work_photos/widgets/back_blocker.dart';
 import 'package:work_photos/widgets/status_views.dart';
 import 'package:work_photos/widgets/thumbnail.dart';
@@ -75,16 +78,22 @@ class _ImportPageState extends ConsumerState<ImportPage>
 
   /// 请求把返回拦截同步为 [block] —— **必须在 build 之外调用**。
   ///
-  /// 为什么不能在 build 里直接 push/pop（旧实现的 bug）：
-  /// [BackBlocker.count] 被 Shell（`AppScaffold` 的 `ValueListenableBuilder`）
-  /// 监听，而本页是 `AppScaffold` 的**后代**。在 build 中改 count 会让 Shell
-  /// 在「正在 build 本页」时被 markNeedsBuild，Flutter 直接抛
-  /// `setState() or markNeedsBuild() called during build`：本次 build 中断、
-  /// Shell 的 builder 不会重建，`PopScope.canPop` 停留在旧值 `true`，
-  /// 系统返回于是直接 pop 到根 —— **退出软件**。
+  /// 两条独立的理由，别混淆：
   ///
-  /// 现在：改选中态时只登记「期望」，真正的 push/pop 排到**帧后**执行，
-  /// count 的变更发生在 build 之外，Shell 正常重建，canPop 才会变 false。
+  /// 1. **为什么返回拦截改用 BackButtonListener**：go_router 13.2.5 的
+  ///    `popRoute()` 在「根 Navigator 只有 shell、分支也没有可 pop 路由」时
+  ///    直接 `return false`，根本不调用 `maybePop()`，所以挂在 Shell 上的
+  ///    `PopScope(canPop: false)` 从未被咨询（详见 `AppScaffold` 类文档）。
+  ///    现在的 `BackButtonListener` 直接读 [BackBlocker] 注册表消费返回。
+  ///
+  /// 2. **为什么 push/pop 仍要排到帧后**：build 期间修改全局状态
+  ///    （[BackBlocker] 的注册表）会被 Flutter 判定为「构建中改状态」，
+  ///    抛出 `setState() or markNeedsBuild() called during build`，中断本次
+  ///    build。与返回能否生效无关，但会引发别的构建问题。
+  ///
+  /// 实现：改选中态时只登记「期望」，真正的 push/pop 排到帧后执行；
+  /// `_wantBackBlock`（期望）与 `_backBlocked`（真实注册状态）分开维护，
+  /// 保证 dispose 时不会 pop 一个从未 push 过的 handler。
   void _syncBackBlock(bool block) {
     if (block == _wantBackBlock) return; // 期望没变：无需排队
     _wantBackBlock = block;
@@ -471,6 +480,71 @@ class _ImportPageState extends ConsumerState<ImportPage>
     }
   }
 
+  /// 相机快捷入口：拉起系统相机 → 拍完刷新 → 按时间戳筛选本次新增 → 快速导入弹窗。
+  ///
+  /// 为什么用「时间戳筛选」而不是「总数差」判断新增：
+  /// 相册随时可能被其它应用并发写入（别的 App 也在拍照），「相册总数前后差」
+  /// 会把别人的新增也算成本次拍摄，导致误判导入范围；而本次拍摄的
+  /// `createDateTime` 必然晚于拍摄前记录的基线，逐项按时间戳筛选更精确、
+  /// 可解释，也不受并发写入干扰。基线前置 2 秒容差，用于吸收设备时钟精度与
+  /// 文件写入/入库的延迟。
+  Future<void> _openCameraAndQuickImport() async {
+    // 保障写入公共 DCIM 所需的存储权限（不阻断流程）：
+    // - Android 9 及以下（API<=28）必须 WRITE_EXTERNAL_STORAGE 才能创建输出文件；
+    // - 它与 READ 同属 STORAGE 组，若 READ 已授予，本次请求会静默自动授予（无弹窗）；
+    // - 新系统上 Permission.storage 已废弃，请求直接返回 denied，无副作用。
+    // 用户拒绝时拍照会失败并被静默忽略，不影响其余功能。
+    await Permission.storage.request();
+    if (!mounted) return;
+
+    // 拍摄前记录时间基线（2 秒容差：防设备时钟与写入延迟）。
+    final DateTime since =
+        DateTime.now().subtract(const Duration(seconds: 2));
+
+    final bool captured = await CameraLauncher.capturePhoto();
+    if (!mounted) return;
+    if (!captured) return; // 用户取消 / 无相机 / 失败：静默返回。
+
+    // 刷新相册列表与当前相册第 0 页（相机已把文件写入 MediaStore）。
+    await _loadAlbums();
+    if (!mounted) return;
+
+    final pm.AssetPathEntity? album = _currentAlbum;
+    if (album == null) return;
+
+    // 重新取第 0 页（最新 size 项），筛出拍摄时间晚于基线的项。
+    final List<pm.AssetEntity> page0 =
+        await album.getAssetListPaged(page: 0, size: 50);
+    final List<pm.AssetEntity> fresh = page0
+        .where((pm.AssetEntity a) => a.createDateTime.isAfter(since))
+        .toList();
+    if (!mounted) return;
+
+    if (fresh.isEmpty) {
+      // 可能是媒体库尚未索引完成：提示用户稍后刷新重试。
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('未识别到本次新增的媒体（可能仍在写入相册，稍后点右上刷新重试）'),
+        ),
+      );
+      return;
+    }
+
+    final int? imported = await showQuickImportSheet(
+      context,
+      assets: fresh,
+      albumLabel: albumDisplayName(album),
+    );
+    if (!mounted) return;
+    if (imported != null && imported > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已快速导入 $imported 项媒体（仅记录引用，未复制文件）')),
+      );
+      // 再刷一次，确保导入后列表状态最新。
+      await _loadAlbums();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
@@ -493,6 +567,12 @@ class _ImportPageState extends ConsumerState<ImportPage>
         appBar: AppBar(
         title: const Text('引用式导入'),
         actions: <Widget>[
+          // 相机快捷入口：拍完自动识别新增 → 弹「快速导入」确认后引用入库。
+          IconButton(
+            icon: const Icon(Icons.photo_camera_outlined),
+            tooltip: '拍照快速导入',
+            onPressed: _loading ? null : _openCameraAndQuickImport,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: '刷新相册',

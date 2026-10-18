@@ -47,3 +47,11 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // 相机快捷入口用 androidx.core 的 FileProvider，将输出文件映射为带临时授权的
+    // content:// Uri 交给系统相机写入（Android 7+ 禁止 file:// 跨应用传递）。
+    // 该库本已随 Flutter 生态传递存在于依赖图中，此处显式声明仅为确保 :app
+    // 模块在编译期可见；版本按「就高」由 Gradle 与传递依赖去重，不新增运行时代价。
+    implementation("androidx.core:core:1.13.1")
+}

@@ -26,6 +26,10 @@ class AssignCategorySheet extends ConsumerStatefulWidget {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      // 挂在根 Navigator 上：返回键拦截（BackButtonListener）只对根 Navigator
+      // 上的可 pop 路由让路；挂分支 Navigator 会导致「按返回先清空多选、
+      // 面板不关」。与 quick_import_sheet 的做法保持一致。
+      useRootNavigator: true,
       builder: (ctx) => AssignCategorySheet._(photoIds: photoIds),
     );
   }

@@ -25,6 +25,23 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- 相机快捷入口（引用式导入页）：
+             用 FileProvider 把 DCIM/WorkPhotos 下的输出文件映射为一个带临时授权的
+             content:// Uri 交给系统相机写入——Android 7.0（API 24）起禁止把
+             file:// Uri 通过 Intent 传给其它应用（FileUriExposedException）。
+             authorities 必须与 MainActivity 中使用的 "$packageName.fileprovider"
+             一致（applicationId 即 com.example.work_photos）。
+             注意：这里**不**声明 android.permission.CAMERA——用系统相机 Intent 时
+             相机权限由相机应用自身持有，本应用无需申请。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -44,4 +61,9 @@
     </queries>
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- 相机快捷入口：在 Android 9 及以下（API <= 28）向公共 DCIM/WorkPhotos/
+         创建/写入输出文件需要 WRITE_EXTERNAL_STORAGE。API 29 起改用 scoped
+         storage，该权限已无意义，故用 maxSdkVersion=28 限定范围，避免在
+         新系统上多申请一个无用的运行时权限。 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 </manifest>
