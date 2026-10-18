@@ -2,33 +2,33 @@ import 'package:flutter/foundation.dart';
 
 /// 返回拦截注册表（多选态系统返回退出的修复）。
 ///
-/// 背景：`StatefulShellRoute.indexedStack` 的分支页面位于**内嵌
-/// Navigator** 中，系统返回键先询问根导航器的 Shell 路由——分支页面
-/// 内的 `PopScope` 不会被询问（go_router 已知限制），表现为多选态按
-/// 返回直接退出软件。
+/// 背景：`StatefulShellRoute.indexedStack` 的分支页面位于**内嵌 Navigator**
+/// 中，且整个 Shell 在根 Navigator 里只有一个路由。按系统返回时 go_router
+/// 的 `GoRouterDelegate.popRoute()` 会发现「哪一层都没有可 pop 的路由」，
+/// **直接 `return false`**（根本不会调用 `maybePop()`），所以分支页面里的
+/// `PopScope` 以及 Shell 外层的 `PopScope` 都不会被咨询 —— 表现为多选态
+/// 按返回直接退出软件。详见 `AppScaffold` 类文档里的源码引用。
 ///
-/// 方案：分支页面在 [initState] 注册一个 [BackHandler]（返回 true =
-/// 本次返回已被消费，如"清除选中"），Shell（AppScaffold）用 PopScope
-/// 统一拦截：有活跃拦截器时消费返回并调栈顶处理器；没有则正常放行
-/// （到达根退出软件）。
+/// 方案：分支页面把 [BackHandler] 注册到本注册表；Shell（[AppScaffold]）
+/// 用 **`BackButtonListener`**（不是 PopScope！它跑在
+/// `RouterDelegate.popRoute()` 之前）统一拦截：有活跃拦截器时由栈顶处理器
+/// 消费本次返回（如"清除选中"），没人消费则返回 false 交回 go_router 默认
+/// 行为（根页面 → 退出软件）。
 ///
-/// 用法（ConsumerState 分支页面）：
+/// 用法（ConsumerState 分支页面）：注册/注销**不要放在 build 里**
+/// （改 [count] 会在 build 期间触发监听者重建，见各页 `_syncBackBlock`
+/// 的说明），应在改变选中集的入口处调用：
 /// ```dart
 /// late final BackHandler _backHandler = () {
-///   if (ref.read(selectionProvider).isNotEmpty) {
-///     ref.read(selectionProvider.notifier).state = <int>{};
+///   if (_selected.isNotEmpty) {
+///     setState(() => _selected.clear());
 ///     return true;
 ///   }
 ///   return false;
 /// }();
-/// bool _backBlocked = false;
-///
-/// // build 中按当前条件同步注册/注销（count 驱动 Shell 的 canPop）：
-/// _syncBackBlock(hasSelection);
-/// void _syncBackBlock(bool block) {
-///   if (block && !_backBlocked) { BackBlocker.push(_backHandler); _backBlocked = true; }
-///   if (!block && _backBlocked) { BackBlocker.pop(_backHandler); _backBlocked = false; }
-/// }
+/// bool _wantBackBlock = false;   // 期望
+/// bool _backBlocked = false;     // 已真正 push
+/// void _syncBackBlock(bool block) { /* 记录期望 + 帧后 push/pop */ }
 /// // dispose：if (_backBlocked) BackBlocker.pop(_backHandler);
 /// ```
 typedef BackHandler = bool Function();

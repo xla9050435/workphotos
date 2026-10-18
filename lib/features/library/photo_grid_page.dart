@@ -135,16 +135,22 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
 
   /// 请求把返回拦截同步为 [block] —— **必须在 build 之外调用**。
   ///
-  /// 为什么不能在 build 里直接 push/pop（旧实现的 bug）：
-  /// [BackBlocker.count] 被 Shell（`AppScaffold` 的 `ValueListenableBuilder`）
-  /// 监听，而本页是 `AppScaffold` 的**后代**。在 build 中改 count 会让 Shell
-  /// 在「正在 build 本页」时被 markNeedsBuild，Flutter 直接抛
-  /// `setState() or markNeedsBuild() called during build`：本次 build 中断、
-  /// Shell 的 builder 不会重建，`PopScope.canPop` 停留在旧值 `true`，
-  /// 系统返回于是直接 pop 到根 —— **退出软件**。
+  /// 两条独立的理由，别混淆：
   ///
-  /// 现在：选中态变化时只登记「期望」，真正的 push/pop 排到**帧后**执行，
-  /// count 的变更发生在 build 之外，Shell 正常重建，canPop 才会变 false。
+  /// 1. **为什么返回拦截改用 BackButtonListener**：go_router 13.2.5 的
+  ///    `popRoute()` 在「根 Navigator 只有 shell、分支也没有可 pop 路由」时
+  ///    直接 `return false`，根本不调用 `maybePop()`，所以挂在 Shell 上的
+  ///    `PopScope(canPop: false)` 从未被咨询（详见 `AppScaffold` 类文档）。
+  ///    现在的 `BackButtonListener` 直接读 [BackBlocker] 注册表消费返回。
+  ///
+  /// 2. **为什么 push/pop 仍要排到帧后**：build 期间修改全局状态
+  ///    （[BackBlocker] 的注册表）会被 Flutter 判定为「构建中改状态」，
+  ///    抛出 `setState() or markNeedsBuild() called during build`，中断本次
+  ///    build。与返回能否生效无关，但会引发别的构建问题。
+  ///
+  /// 实现：改选中态时只登记「期望」，真正的 push/pop 排到帧后执行；
+  /// `_wantBackBlock`（期望）与 `_backBlocked`（真实注册状态）分开维护，
+  /// 保证 dispose 时不会 pop 一个从未 push 过的 handler。
   void _syncBackBlock(bool block) {
     if (block == _wantBackBlock) return; // 期望没变：无需排队
     _wantBackBlock = block;
