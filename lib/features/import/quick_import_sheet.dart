@@ -71,7 +71,7 @@ class _QuickImportSheetState extends ConsumerState<_QuickImportSheet> {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final int count = widget.assets.length;
-    return SafeArea(
+    final Widget content = SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -163,6 +163,19 @@ class _QuickImportSheetState extends ConsumerState<_QuickImportSheet> {
           ],
         ),
       ),
+    );
+    // _busy（await importAssets 期间）禁止系统返回键关闭弹层：
+    // 此时导入其实已在写库，若弹层被关掉，调用方会当成用户取消（拿到 null），
+    // 表现为本页列表不立即刷新、少一条 toast。弹层路由可被根 Navigator.maybePop()
+    // 触达，所以 PopScope 在这一层有效——与 Shell 页 PopScope 失效
+    // （popRoute 直接 return false、从不进 maybePop）不是一回事。
+    // 已知边界：此处只挡【系统返回键】；点外部(barrier)/下拉(drag) 走
+    // Navigator.pop()，不经 popDisposition，PopScope 拦不住——那两条依赖
+    // showModalBottomSheet 的 isDismissible/enableDrag（open 时固定，动态改需
+    // 自定义 route），本次不做。
+    return PopScope(
+      canPop: !_busy,
+      child: content,
     );
   }
 }
