@@ -89,3 +89,44 @@ List<Category> treeOrdered(
   }
   return out;
 }
+
+/// 计算每个分类在树中的深度（根 = 0），用于层级缩进展示。
+///
+/// 语义与「分类管理页」「归入分类面板」共用同一口径，三处调用此函数，
+/// 避免各自维护一份实现导致缩进/层级漂移。
+///
+/// 兜底与健壮性：
+/// - 父节点不在 [flat] 中（父被删 / 数据脏）：该分类按根处理，深度 0；
+/// - [Category.id] 为 null 的分类（尚未入库的草稿）不进入深度图；
+/// - **环检测**：沿 [Category.parentId] 向上传递一个 `visiting` 访问集合，
+///   若某节点在本条递归链上重复出现（如 A→B→A 或自环），直接按根（0）
+///   终止递归，避免无限递归 / 栈溢出。环上各节点仍会得到有限深度。
+Map<int, int> categoryDepthMap(List<Category> flat) {
+  final Map<int, Category> byId = <int, Category>{
+    for (final Category c in flat)
+      if (c.id != null) c.id!: c,
+  };
+  final Map<int, int> depth = <int, int>{};
+
+  int compute(int id, Set<int> visiting) {
+    final int? memo = depth[id];
+    if (memo != null) return memo;
+    // 环检测：id 已在本条递归链上 → 成环，按根（0）兜底，终止递归。
+    if (!visiting.add(id)) return 0;
+    final Category? c = byId[id];
+    final int result;
+    if (c == null || c.parentId == null || !byId.containsKey(c.parentId)) {
+      result = 0; // 到达根，或父节点缺失。
+    } else {
+      result = compute(c.parentId!, visiting) + 1;
+    }
+    visiting.remove(id);
+    depth[id] = result;
+    return result;
+  }
+
+  for (final Category c in flat) {
+    if (c.id != null) compute(c.id!, <int>{});
+  }
+  return depth;
+}

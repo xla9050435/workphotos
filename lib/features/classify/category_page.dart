@@ -32,31 +32,6 @@ class _SortMenuItem extends ConsumerWidget {
   }
 }
 
-/// 计算每个分类在树中的深度（根=0），用于缩进展示。
-Map<int, int> _depthMap(List<Category> flat) {
-  final Map<int, Category> byId = <int, Category>{
-    for (final Category c in flat)
-      if (c.id != null) c.id!: c,
-  };
-  final Map<int, int> depth = <int, int>{};
-  int compute(int id) {
-    if (depth.containsKey(id)) return depth[id]!;
-    final Category? c = byId[id];
-    if (c == null || c.parentId == null || !byId.containsKey(c.parentId)) {
-      depth[id] = 0;
-      return 0;
-    }
-    final int d = compute(c.parentId!) + 1;
-    depth[id] = d;
-    return d;
-  }
-
-  for (final Category c in flat) {
-    if (c.id != null) compute(c.id!);
-  }
-  return depth;
-}
-
 /// 分类管理页（B3 + R8 增强 + 分类排序）。
 ///
 /// 通过 [sortedCategoryListProvider] 观察**已按当前排序模式排好**的分类
@@ -218,7 +193,7 @@ class _CategoryPageState extends ConsumerState<CategoryPage> {
     // 按层级整理为树序（同层按当前排序模式排），并计算每个节点的深度
     // 用于缩进（treeOrdered 见 category_sort.dart，可被单测直接覆盖）。
     final List<Category> display = treeOrdered(filtered, sortMode: sortMode);
-    final Map<int, int> depths = _depthMap(filtered);
+    final Map<int, int> depths = categoryDepthMap(filtered);
     final Map<int, String> nameOf = <int, String>{
       for (final Category c in filtered)
         if (c.id != null) c.id!: c.name,
@@ -358,7 +333,7 @@ class _CategoryPageState extends ConsumerState<CategoryPage> {
     final List<Category> candidates = all
         .where((Category c) => c.id == null || !forbidden.contains(c.id))
         .toList();
-    final Map<int, int> depths = _depthMap(all);
+    final Map<int, int> depths = categoryDepthMap(all);
     const int kRootSentinel = -1;
     final int? result = await showDialog<int>(
       context: context,
