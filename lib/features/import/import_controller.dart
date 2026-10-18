@@ -28,7 +28,9 @@ class ImportController {
   ///
   /// 视频判定：`type == AssetType.video`；时长取
   /// [pm.AssetEntity.videoDuration]（毫秒精度），图片 duration 恒 0
-  /// 不写库；宽高直接取实体字段（MediaStore 元数据）。
+  /// 不写库；宽高直接取实体字段（MediaStore 元数据）；
+  /// [pm.AssetEntity.createDateTime] 即**拍摄时间**，写入 shotAt 供相册页
+  /// 排序 / 分组 / 日期筛选用。
   ImportItem _toItem(pm.AssetEntity e) {
     final bool isVideo = e.type == pm.AssetType.video;
     return ImportItem(
@@ -37,6 +39,7 @@ class ImportController {
       durationMs: isVideo ? e.videoDuration.inMilliseconds : null,
       width: e.width,
       height: e.height,
+      shotAt: e.createDateTime,
     );
   }
 }

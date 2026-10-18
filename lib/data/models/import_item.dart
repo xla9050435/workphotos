@@ -18,11 +18,16 @@ class ImportItem {
   final int? width;
   final int? height;
 
+  /// 拍摄时间（来自 photo_manager 的 `AssetEntity.createDateTime`）；
+  /// 取不到时为 null，入库后由 COALESCE(shot_at, created_at) 兜底。
+  final DateTime? shotAt;
+
   const ImportItem({
     required this.ref,
     required this.mediaType,
     this.durationMs,
     this.width,
     this.height,
+    this.shotAt,
   });
 }

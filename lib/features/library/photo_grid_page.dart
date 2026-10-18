@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:work_photos/core/utils/media_count_label.dart';
 import 'package:work_photos/data/models/photo.dart';
 import 'package:work_photos/features/filters/filter_bar.dart';
 import 'package:work_photos/features/library/multi_select_bar.dart';
@@ -25,7 +26,8 @@ import 'package:work_photos/widgets/pinch_column_tracker.dart';
 /// 途经的照片自动加入选择集（橡皮筋式滑动多选）。
 ///
 /// 每日日期显示：当 [settingsProvider].groupByDay 为 true（默认）时，照片按
-/// [Photo.createdAt] 的年月日分组，每组带日期头（今天 / 昨天 / 前天 / yyyy年M月d日）。
+/// [Photo.displayTime]（拍摄时间优先，缺失回退导入时间）的年月日分组，
+/// 每组带日期头（今天 / 昨天 / 前天 / yyyy年M月d日）。
 class PhotoGridPage extends ConsumerStatefulWidget {
   const PhotoGridPage({super.key});
 
@@ -39,6 +41,15 @@ class _PhotoGroup {
   final List<Photo> photos;
 
   _PhotoGroup({required this.label, required this.photos});
+}
+
+/// 分组计数文案：统计图片 / 视频构成后交给 [mediaCountLabel]（与导入页同口径）。
+String _groupCountLabel(List<Photo> photos) {
+  final int videos = photos.where((Photo p) => p.isVideo).length;
+  return mediaCountLabel(
+    imageCount: photos.length - videos,
+    videoCount: videos,
+  );
 }
 
 class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
@@ -144,7 +155,8 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
     super.dispose();
   }
 
-  /// 将 [photos] 按 [Photo.createdAt] 的年月日分组，保持原有顺序。
+  /// 将 [photos] 按 [Photo.displayTime]（拍摄时间优先）的年月日分组，
+  /// 保持原有顺序。
   ///
   /// 返回的分组顺序与 [photos] 中各照片首次出现的日序一致；当 [groupByDay]
   /// 为 false 时返回单组（整体作为一组，无日期头）。
@@ -155,7 +167,7 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
     final List<_PhotoGroup> groups = <_PhotoGroup>[];
     final Map<String, _PhotoGroup> index = <String, _PhotoGroup>{};
     for (final Photo p in photos) {
-      final String key = _dayLabel(p.createdAt);
+      final String key = _dayLabel(p.displayTime);
       final _PhotoGroup? existing = index[key];
       if (existing != null) {
         existing.photos.add(p);
@@ -400,7 +412,7 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                '${group.photos.length}张',
+                                _groupCountLabel(group.photos),
                                 style: TextStyle(
                                   color: Theme.of(context)
                                       .colorScheme

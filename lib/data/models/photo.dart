@@ -28,6 +28,10 @@ class Photo {
   final int? width;
   final int? height;
 
+  /// 拍摄时间（来源 `AssetEntity.createDateTime`）；老数据/未知为 null，
+  /// 统一用 [displayTime] 取「展示用时间」。
+  final DateTime? shotAt;
+
   const Photo({
     this.id,
     required this.mediaRef,
@@ -41,7 +45,14 @@ class Photo {
     this.durationMs,
     this.width,
     this.height,
+    this.shotAt,
   });
+
+  /// 展示用时间：优先拍摄时间，缺失时回退到导入时间。
+  ///
+  /// 相册页排序 / 日期分组 / 日期筛选与详情页元信息都应取这个值，
+  /// 与 SQL 侧 `COALESCE(shot_at, created_at)` 保持同一语义。
+  DateTime get displayTime => shotAt ?? createdAt;
 
   /// 是否已被归类使用。
   bool get isUsed => usedStatus == UsedStatus.used;

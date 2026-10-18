@@ -31,20 +31,36 @@ class _PermissionGateState extends ConsumerState<PermissionGate> {
     _evaluate();
   }
 
-  /// 检查当前授权状态。
+  /// 检查当前授权状态（冷启动 / 从系统设置返回时调用）。
   Future<void> _evaluate() async {
-    final PermissionStatus status = await _targetPermission().status;
-    _apply(status);
+    _apply(await _resolveStatus(request: false));
   }
 
-  /// 请求授权（含旧版回退）。
+  /// 请求授权（点击「去授权」时调用）。
   Future<void> _request() async {
-    PermissionStatus status = await _targetPermission().request();
-    // 回退：旧版 Android（<13）使用 storage 权限。
+    _apply(await _resolveStatus(request: true));
+  }
+
+  /// 统一的相册可用状态判定（评估与请求共用，避免两处逻辑再次分叉）。
+  ///
+  /// - [request] 为 true 时发起授权请求，否则仅查询当前状态；
+  /// - 优先 [Permission.photos]；未授权时回退 [Permission.storage]。
+  ///
+  /// 回退必要性：Android <13 上 [Permission.photos] 映射的
+  /// READ_MEDIA_IMAGES 不被系统识别，permission_handler 查到空权限列表
+  /// 会恒返回 denied；此时真正的相册权限是 READ_EXTERNAL_STORAGE
+  /// （即 [Permission.storage]）。若评估阶段不做同样的回退，就会出现
+  /// 「已授权却每次冷启动都停在权限页」的问题。
+  Future<PermissionStatus> _resolveStatus({required bool request}) async {
+    final Permission photos = _targetPermission();
+    PermissionStatus status =
+        request ? await photos.request() : await photos.status;
     if (!status.isGranted) {
-      status = await Permission.storage.request();
+      status = request
+          ? await Permission.storage.request()
+          : await Permission.storage.status;
     }
-    _apply(status);
+    return status;
   }
 
   void _apply(PermissionStatus status) {

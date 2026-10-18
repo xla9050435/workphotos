@@ -8,6 +8,17 @@ import 'package:work_photos/core/utils/duration_format.dart';
 import 'package:work_photos/core/utils/video_mime.dart';
 import 'package:work_photos/data/models/photo.dart';
 
+/// 播放器时间文本：按「秒」截断后再格式化。
+///
+/// video_player 提供毫秒级真实时长（如 7688ms），而 DB 侧时长来自
+/// photo_manager 的**秒级**精度（截断得 7000ms，见 `Photo.durationLabel`）。
+/// 若播放器直接按毫秒四舍五入，会出现「进度条 0:08 / 信息区 0:07」的分叉；
+/// 统一为秒级截断后两处一致，也贴合主流播放器「只显示到秒」的习惯。
+String _formatPlayerTime(int ms) {
+  final int sec = ms <= 0 ? 0 : ms ~/ 1000;
+  return formatDurationMs(sec * 1000) ?? '0:00';
+}
+
 /// 视频播放面板（详情页图片区的视频替代）。
 ///
 /// - 经 [Photo.resolveFile] 解析引用得到本地文件，用
@@ -145,7 +156,7 @@ class _VideoPaneState extends State<VideoPane> {
     final int posMs = c.value.position.inMilliseconds.clamp(0, totalMs);
     final bool playing = c.value.isPlaying;
 
-    return Stack(
+    final Widget stack = Stack(
       alignment: Alignment.center,
       children: <Widget>[
         // 画面：按视频宽高比布局，黑底（详情页背景即黑）。
@@ -202,7 +213,7 @@ class _VideoPaneState extends State<VideoPane> {
                 SizedBox(
                   width: 44,
                   child: Text(
-                    formatDuration(Duration(milliseconds: posMs)) ?? '0:00',
+                    _formatPlayerTime(posMs),
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
                 ),
@@ -238,7 +249,7 @@ class _VideoPaneState extends State<VideoPane> {
                 SizedBox(
                   width: 44,
                   child: Text(
-                    formatDuration(Duration(milliseconds: totalMs)) ?? '0:00',
+                    _formatPlayerTime(totalMs),
                     textAlign: TextAlign.right,
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
@@ -248,6 +259,16 @@ class _VideoPaneState extends State<VideoPane> {
           ),
         ),
       ],
+    );
+    // 点画面任意处切换播放/暂停（标准播放器交互）。
+    //
+    // 用 opaque 让视频黑边（AspectRatio 之外的空白区）也可点击；中央大
+    // 按钮的 IgnorePointer 只负责「播放中淡出避让画面」，交互入口统一由
+    // 本层提供——否则视频一开始播放，中央按钮被忽略，就再也没有暂停入口。
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _togglePlay,
+      child: stack,
     );
   }
 }

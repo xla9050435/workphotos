@@ -32,16 +32,35 @@ REM ============================================================
 
 setlocal EnableExtensions EnableDelayedExpansion
 
+REM --- Defensive: drop any proxy inherited from the parent shell.
+REM --- A machine-wide HTTP_PROXY would otherwise leak into pub / Gradle
+REM --- even when this script wants a direct connection.
+set "HTTP_PROXY="
+set "HTTPS_PROXY="
+set "http_proxy="
+set "https_proxy="
+
 REM ------------------------------------------------------------
 REM  >>> USER SETTINGS - this is the only part you may need to edit
 REM
-REM  PROXY_PORT : the local port of your Clash / VPN client.
-REM               Open your proxy app, look at its settings page,
-REM               and change the number below if it is not 7897.
-REM               Getting packages from pub.dev / Google needs this.
+REM  PROXY_PORT : LEAVE THIS EMPTY (recommended). The script then
+REM               connects directly, which is what works on this
+REM               machine - repo.maven.apache.org answers 200 with
+REM               no proxy at all.
+REM
+REM               Only fill this in if pub.dev / Google really cannot
+REM               be reached directly. Put the local port of your
+REM               Clash / VPN client here, for example
+REM               set "PROXY_PORT=7897"
+REM
+REM               The port is NOT trusted blindly: the script probes
+REM               it with curl first, and silently falls back to a
+REM               direct connection if the port does not answer as
+REM               an HTTP proxy. A stale port used to turn every
+REM               single download into "Connection refused".
 REM ------------------------------------------------------------
 set "PROXY_HOST=127.0.0.1"
-set "PROXY_PORT=7897"
+set "PROXY_PORT="
 
 REM ------------------------------------------------------------
 REM  Do not change anything below this line.
@@ -66,38 +85,67 @@ title Work Photos - Build and Run
 REM --- Always work inside the folder that holds this script ---
 cd /D "%ROOT%"
 
-REM --- Proxy environment variables (lowercase copies: some tools need them) ---
-set "HTTP_PROXY=http://%PROXY_HOST%:%PROXY_PORT%"
-set "HTTPS_PROXY=%HTTP_PROXY%"
-set "http_proxy=%HTTP_PROXY%"
-set "https_proxy=%HTTP_PROXY%"
-set "NO_PROXY=localhost,127.0.0.1,::1"
-set "no_proxy=%NO_PROXY%"
+REM --- Proxy setup -------------------------------------------------
+REM Default is a DIRECT connection. Setting the proxy variables to a
+REM port that is not actually listening is worse than not setting them
+REM at all: Gradle then fails every download with "Connection refused"
+REM instead of quietly going direct.
+REM
+REM So: only use the proxy when the user filled in PROXY_PORT AND the
+REM port really answers as an HTTP proxy. curl with -x is the cheapest
+REM honest test - it exercises the CONNECT path Gradle itself will use.
+set "PROXY_OK=0"
+if defined PROXY_PORT (
+  set "PROBE="
+  for /f "usebackq delims=" %%A in (`curl -s -o NUL -w "%%{http_code}" -m 5 -x "http://%PROXY_HOST%:%PROXY_PORT%" https://repo.maven.apache.org/maven2/ 2^>NUL`) do set "PROBE=%%A"
+  if "!PROBE!"=="200" set "PROXY_OK=1"
+)
 
-REM --- Gradle does NOT read HTTP_PROXY. It only reads JVM system properties,
-REM --- so the Android build needs its own proxy settings, otherwise the
-REM --- first Gradle / Maven download stalls until it times out.
-REM ---
-REM --- DO NOT add  -Dhttp.nonProxyHosts=localhost|127.0.0.1  to this line.
-REM --- '|' is the cmd.exe PIPE operator, and android\gradlew.bat builds its
-REM --- java command line with an UNQUOTED GRADLE_OPTS in the middle:
-REM ---     java  ...  GRADLE_OPTS  "-Dorg.gradle.appname=..."  ...
-REM --- cmd splits that command line at the pipe and then tries to RUN the
-REM --- text after it, which prints "'127.0.0.1' is not recognized as an
-REM --- internal or external command" and aborts the build with exit code 255.
-REM --- Escaping it as ^| is NOT a real fix either: inside set "VAR=..."
-REM --- cmd keeps the caret, so the variable really holds "^|", and it only
-REM --- seems to work because gradlew.bat happens to expand it unquoted.
-REM --- That is a silent trap waiting for the next Gradle update.
-REM --- The proxy host and port below are what Gradle actually needs, so
-REM --- the nonProxyHosts part is deliberately left out on purpose.
-set "GRADLE_OPTS=-Dhttp.proxyHost=%PROXY_HOST% -Dhttp.proxyPort=%PROXY_PORT% -Dhttps.proxyHost=%PROXY_HOST% -Dhttps.proxyPort=%PROXY_PORT%"
+if "!PROXY_OK!"=="1" (
+  set "HTTP_PROXY=http://%PROXY_HOST%:%PROXY_PORT%"
+  set "HTTPS_PROXY=!HTTP_PROXY!"
+  set "http_proxy=!HTTP_PROXY!"
+  set "https_proxy=!HTTP_PROXY!"
+  set "NO_PROXY=localhost,127.0.0.1,::1"
+  set "no_proxy=!NO_PROXY!"
+  REM --- Gradle does NOT read HTTP_PROXY. It only reads JVM system
+  REM --- properties, so the Android build needs its own proxy setup.
+  REM ---
+  REM --- DO NOT add  -Dhttp.nonProxyHosts=localhost|127.0.0.1  here.
+  REM --- '|' is the cmd.exe PIPE operator, and android\gradlew.bat
+  REM --- builds its java command line with an UNQUOTED GRADLE_OPTS in
+  REM --- the middle:
+  REM ---     java  ...  GRADLE_OPTS  "-Dorg.gradle.appname=..."  ...
+  REM --- cmd splits that line at the pipe and then tries to RUN the
+  REM --- text after it, which prints "'127.0.0.1' is not recognized as
+  REM --- an internal or external command" and aborts with exit 255.
+  REM --- Escaping it as ^| is NOT a real fix either: inside set "VAR=..."
+  REM --- cmd keeps the caret, so the variable really holds "^|", and it
+  REM --- only seems to work because gradlew.bat expands it unquoted.
+  set "GRADLE_OPTS=-Dhttp.proxyHost=%PROXY_HOST% -Dhttp.proxyPort=%PROXY_PORT% -Dhttps.proxyHost=%PROXY_HOST% -Dhttps.proxyPort=%PROXY_PORT%"
+  set "PROXY_LABEL=!HTTP_PROXY!"
+) else (
+  REM Clear anything inherited from the parent shell as well, otherwise a
+  REM system-wide HTTP_PROXY would still be picked up by pub / Gradle.
+  set "HTTP_PROXY="
+  set "HTTPS_PROXY="
+  set "http_proxy="
+  set "https_proxy="
+  set "NO_PROXY="
+  set "no_proxy="
+  set "GRADLE_OPTS="
+  if defined PROXY_PORT (
+    set "PROXY_LABEL=direct  (proxy port %PROXY_PORT% did not answer - ignored)"
+  ) else (
+    set "PROXY_LABEL=direct  (no proxy configured)"
+  )
+)
 
 REM --- Fresh log for every run ---
 >  "%LOG%" echo ============================================================
 >>"%LOG%" echo  build_and_run.bat started  %DATE% %TIME%
 >>"%LOG%" echo  Folder : %ROOT%
->>"%LOG%" echo  Proxy  : %HTTP_PROXY%
+>>"%LOG%" echo  Proxy  : !PROXY_LABEL!
 >>"%LOG%" echo ============================================================
 
 echo(
@@ -105,16 +153,15 @@ echo ============================================================
 echo   WORK PHOTOS  -  BUILD AND RUN
 echo ============================================================
 echo   Folder : %ROOT%
-echo   Proxy  : %HTTP_PROXY%
+echo   Proxy  : !PROXY_LABEL!
 echo   Log    : %LOG%
 echo ============================================================
 echo(
-echo   PROXY WARNING - READ THIS FIRST
-echo   If anything cannot be downloaded - errors mentioning
-echo   pub.dev, dartlang.org, maven.google.com, or a timeout -
-echo   your proxy port is wrong. Open your proxy app, find the
-echo   port it actually uses, then edit PROXY_PORT near the top
-echo   of build_and_run.bat and double-click it again.
+echo   If a download still fails - errors mentioning pub.dev,
+echo   dartlang.org, maven.google.com, or a timeout - open Clash,
+echo   find the port it listens on, and set PROXY_PORT near the top
+echo   of build_and_run.bat. The script tests the port before using
+echo   it, so a wrong number can no longer break the build by itself.
 echo(
 
 call "%SHOW_HELP%" "%ROOT%help_zh\00_intro.txt"

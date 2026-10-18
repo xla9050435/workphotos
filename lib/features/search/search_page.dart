@@ -264,7 +264,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                                   final Photo p = results[i];
                                   return _SearchResultTile(
                                     photo: p,
-                                    dateLabel: _fmtDate(p.createdAt),
+                                    // 展示时间与结果排序键一致（拍摄时间优先），
+                                    // 否则列表看起来像乱序。
+                                    dateLabel: _fmtDate(p.displayTime),
                                     photoIds: ids,
                                     index: ids.indexOf(p.id ?? -1),
                                   );

@@ -28,13 +28,22 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (Migrator m) async {
           // createAll 会一并创建 @TableIndex 声明的索引（含新装的 v3）。
           await m.createAll();
+          // 表达式索引（新装路径）：显示时间 = COALESCE(shot_at, created_at)。
+          // 相册 / 搜索的 ORDER BY 用的就是这个表达式，SQLite 只有**表达式
+          // 索引**才能命中（单列 idx_photos_shot_at 命不中）。
+          // 与下面 onUpgrade 的 v5 分支必须成对存在，否则会出现
+          // 「新装快、老库升级后慢」的诡异差异。
+          await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_photos_display_time '
+            'ON photos (COALESCE(shot_at, created_at) DESC);',
+          );
         },
         onUpgrade: (Migrator m, int from, int to) async {
           // v1 → v2：新增 photos.note 备注列。
@@ -57,6 +66,27 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(photos, photos.durationMs);
             await m.addColumn(photos, photos.width);
             await m.addColumn(photos, photos.height);
+          }
+          // v4 → v5（拍摄时间）：photos 新增 shot_at 列（可空，来源
+          // AssetEntity.createDateTime）+ 两个索引（shot_at 单列、
+          // COALESCE(shot_at, created_at) 表达式）。老数据 shot_at 为 null，
+          // 所有查询用 COALESCE(shot_at, created_at) 兜底，表现与升级前一致。
+          // 注意：@TableIndex 只在 onCreate 建索引，升级路径不会自动补建，
+          // 必须在这里显式 createIndex（IF NOT EXISTS 保证重复执行幂等）。
+          if (from < 5) {
+            await m.addColumn(photos, photos.shotAt);
+            await m.createIndex(Index(
+              'idx_photos_shot_at',
+              'CREATE INDEX IF NOT EXISTS idx_photos_shot_at '
+                  'ON photos (shot_at);',
+            ));
+            // 排序实际用的是 COALESCE(shot_at, created_at)，SQLite 必须
+            // 表达式索引才命中；与 onCreate 中的同名语句保持一致。
+            await m.createIndex(Index(
+              'idx_photos_display_time',
+              'CREATE INDEX IF NOT EXISTS idx_photos_display_time '
+                  'ON photos (COALESCE(shot_at, created_at) DESC);',
+            ));
           }
         },
       );

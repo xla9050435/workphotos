@@ -85,6 +85,11 @@ class $PhotosTable extends Photos with TableInfo<$PhotosTable, PhotoRow> {
   late final GeneratedColumn<int> height = GeneratedColumn<int>(
       'height', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _shotAtMeta = const VerificationMeta('shotAt');
+  @override
+  late final GeneratedColumn<DateTime> shotAt = GeneratedColumn<DateTime>(
+      'shot_at', aliasedName, true,
+      type: DriftSqlType.dateTime, requiredDuringInsert: false);
   static const VerificationMeta _createdAtMeta =
       const VerificationMeta('createdAt');
   @override
@@ -111,6 +116,7 @@ class $PhotosTable extends Photos with TableInfo<$PhotosTable, PhotoRow> {
         durationMs,
         width,
         height,
+        shotAt,
         createdAt,
         updatedAt
       ];
@@ -185,6 +191,10 @@ class $PhotosTable extends Photos with TableInfo<$PhotosTable, PhotoRow> {
       context.handle(_heightMeta,
           height.isAcceptableOrUnknown(data['height']!, _heightMeta));
     }
+    if (data.containsKey('shot_at')) {
+      context.handle(_shotAtMeta,
+          shotAt.isAcceptableOrUnknown(data['shot_at']!, _shotAtMeta));
+    }
     if (data.containsKey('created_at')) {
       context.handle(_createdAtMeta,
           createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
@@ -230,6 +240,8 @@ class $PhotosTable extends Photos with TableInfo<$PhotosTable, PhotoRow> {
           .read(DriftSqlType.int, data['${effectivePrefix}width']),
       height: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}height']),
+      shotAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.dateTime, data['${effectivePrefix}shot_at']),
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.dateTime, data['${effectivePrefix}created_at'])!,
       updatedAt: attachedDatabase.typeMapping
@@ -264,6 +276,10 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
   /// 媒体宽高（像素）；解析失败为 null。视频详情页展示分辨率用。
   final int? width;
   final int? height;
+
+  /// 拍摄时间（从 AssetEntity.createDateTime 提取）；未知为 null，
+  /// 读取时一律用 COALESCE(shot_at, created_at) 兜底。
+  final DateTime? shotAt;
   final DateTime createdAt;
   final DateTime updatedAt;
   const PhotoRow(
@@ -279,6 +295,7 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
       this.durationMs,
       this.width,
       this.height,
+      this.shotAt,
       required this.createdAt,
       required this.updatedAt});
   @override
@@ -308,6 +325,9 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
     if (!nullToAbsent || height != null) {
       map['height'] = Variable<int>(height);
     }
+    if (!nullToAbsent || shotAt != null) {
+      map['shot_at'] = Variable<DateTime>(shotAt);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -334,6 +354,8 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
           width == null && nullToAbsent ? const Value.absent() : Value(width),
       height:
           height == null && nullToAbsent ? const Value.absent() : Value(height),
+      shotAt:
+          shotAt == null && nullToAbsent ? const Value.absent() : Value(shotAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -355,6 +377,7 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
       durationMs: serializer.fromJson<int?>(json['durationMs']),
       width: serializer.fromJson<int?>(json['width']),
       height: serializer.fromJson<int?>(json['height']),
+      shotAt: serializer.fromJson<DateTime?>(json['shotAt']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -375,6 +398,7 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
       'durationMs': serializer.toJson<int?>(durationMs),
       'width': serializer.toJson<int?>(width),
       'height': serializer.toJson<int?>(height),
+      'shotAt': serializer.toJson<DateTime?>(shotAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -393,6 +417,7 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
           Value<int?> durationMs = const Value.absent(),
           Value<int?> width = const Value.absent(),
           Value<int?> height = const Value.absent(),
+          Value<DateTime?> shotAt = const Value.absent(),
           DateTime? createdAt,
           DateTime? updatedAt}) =>
       PhotoRow(
@@ -408,6 +433,7 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
         durationMs: durationMs.present ? durationMs.value : this.durationMs,
         width: width.present ? width.value : this.width,
         height: height.present ? height.value : this.height,
+        shotAt: shotAt.present ? shotAt.value : this.shotAt,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -432,6 +458,7 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
           data.durationMs.present ? data.durationMs.value : this.durationMs,
       width: data.width.present ? data.width.value : this.width,
       height: data.height.present ? data.height.value : this.height,
+      shotAt: data.shotAt.present ? data.shotAt.value : this.shotAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -452,6 +479,7 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
           ..write('durationMs: $durationMs, ')
           ..write('width: $width, ')
           ..write('height: $height, ')
+          ..write('shotAt: $shotAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -472,6 +500,7 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
       durationMs,
       width,
       height,
+      shotAt,
       createdAt,
       updatedAt);
   @override
@@ -490,6 +519,7 @@ class PhotoRow extends DataClass implements Insertable<PhotoRow> {
           other.durationMs == this.durationMs &&
           other.width == this.width &&
           other.height == this.height &&
+          other.shotAt == this.shotAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -507,6 +537,7 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
   final Value<int?> durationMs;
   final Value<int?> width;
   final Value<int?> height;
+  final Value<DateTime?> shotAt;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   const PhotosCompanion({
@@ -522,6 +553,7 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
     this.durationMs = const Value.absent(),
     this.width = const Value.absent(),
     this.height = const Value.absent(),
+    this.shotAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
@@ -538,6 +570,7 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
     this.durationMs = const Value.absent(),
     this.width = const Value.absent(),
     this.height = const Value.absent(),
+    this.shotAt = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
   })  : mediaRefValue = Value(mediaRefValue),
@@ -557,6 +590,7 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
     Expression<int>? durationMs,
     Expression<int>? width,
     Expression<int>? height,
+    Expression<DateTime>? shotAt,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
   }) {
@@ -573,6 +607,7 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
       if (durationMs != null) 'duration_ms': durationMs,
       if (width != null) 'width': width,
       if (height != null) 'height': height,
+      if (shotAt != null) 'shot_at': shotAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
@@ -591,6 +626,7 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
       Value<int?>? durationMs,
       Value<int?>? width,
       Value<int?>? height,
+      Value<DateTime?>? shotAt,
       Value<DateTime>? createdAt,
       Value<DateTime>? updatedAt}) {
     return PhotosCompanion(
@@ -606,6 +642,7 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
       durationMs: durationMs ?? this.durationMs,
       width: width ?? this.width,
       height: height ?? this.height,
+      shotAt: shotAt ?? this.shotAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -650,6 +687,9 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
     if (height.present) {
       map['height'] = Variable<int>(height.value);
     }
+    if (shotAt.present) {
+      map['shot_at'] = Variable<DateTime>(shotAt.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -674,6 +714,7 @@ class PhotosCompanion extends UpdateCompanion<PhotoRow> {
           ..write('durationMs: $durationMs, ')
           ..write('width: $width, ')
           ..write('height: $height, ')
+          ..write('shotAt: $shotAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1354,6 +1395,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PhotoCategoryTable photoCategory = $PhotoCategoryTable(this);
   late final Index idxPhotosCreatedAt = Index('idx_photos_created_at',
       'CREATE INDEX idx_photos_created_at ON photos (created_at)');
+  late final Index idxPhotosShotAt = Index('idx_photos_shot_at',
+      'CREATE INDEX idx_photos_shot_at ON photos (shot_at)');
   late final Index idxPcCategory = Index('idx_pc_category',
       'CREATE INDEX idx_pc_category ON photo_category (category_id)');
   late final Index idxPcPhoto = Index(
@@ -1371,6 +1414,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         categories,
         photoCategory,
         idxPhotosCreatedAt,
+        idxPhotosShotAt,
         idxPcCategory,
         idxPcPhoto
       ];
@@ -1389,6 +1433,7 @@ typedef $$PhotosTableCreateCompanionBuilder = PhotosCompanion Function({
   Value<int?> durationMs,
   Value<int?> width,
   Value<int?> height,
+  Value<DateTime?> shotAt,
   required DateTime createdAt,
   required DateTime updatedAt,
 });
@@ -1405,6 +1450,7 @@ typedef $$PhotosTableUpdateCompanionBuilder = PhotosCompanion Function({
   Value<int?> durationMs,
   Value<int?> width,
   Value<int?> height,
+  Value<DateTime?> shotAt,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
 });
@@ -1453,6 +1499,9 @@ class $$PhotosTableFilterComposer
 
   ColumnFilters<int> get height => $composableBuilder(
       column: $table.height, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<DateTime> get shotAt => $composableBuilder(
+      column: $table.shotAt, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
@@ -1508,6 +1557,9 @@ class $$PhotosTableOrderingComposer
   ColumnOrderings<int> get height => $composableBuilder(
       column: $table.height, builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<DateTime> get shotAt => $composableBuilder(
+      column: $table.shotAt, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
 
@@ -1560,6 +1612,9 @@ class $$PhotosTableAnnotationComposer
   GeneratedColumn<int> get height =>
       $composableBuilder(column: $table.height, builder: (column) => column);
 
+  GeneratedColumn<DateTime> get shotAt =>
+      $composableBuilder(column: $table.shotAt, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -1602,6 +1657,7 @@ class $$PhotosTableTableManager extends RootTableManager<
             Value<int?> durationMs = const Value.absent(),
             Value<int?> width = const Value.absent(),
             Value<int?> height = const Value.absent(),
+            Value<DateTime?> shotAt = const Value.absent(),
             Value<DateTime> createdAt = const Value.absent(),
             Value<DateTime> updatedAt = const Value.absent(),
           }) =>
@@ -1618,6 +1674,7 @@ class $$PhotosTableTableManager extends RootTableManager<
             durationMs: durationMs,
             width: width,
             height: height,
+            shotAt: shotAt,
             createdAt: createdAt,
             updatedAt: updatedAt,
           ),
@@ -1634,6 +1691,7 @@ class $$PhotosTableTableManager extends RootTableManager<
             Value<int?> durationMs = const Value.absent(),
             Value<int?> width = const Value.absent(),
             Value<int?> height = const Value.absent(),
+            Value<DateTime?> shotAt = const Value.absent(),
             required DateTime createdAt,
             required DateTime updatedAt,
           }) =>
@@ -1650,6 +1708,7 @@ class $$PhotosTableTableManager extends RootTableManager<
             durationMs: durationMs,
             width: width,
             height: height,
+            shotAt: shotAt,
             createdAt: createdAt,
             updatedAt: updatedAt,
           ),

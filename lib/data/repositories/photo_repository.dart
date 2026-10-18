@@ -39,6 +39,9 @@ class PhotoRepository {
           durationMs: Value(item.durationMs),
           width: Value(item.width),
           height: Value(item.height),
+          // 拍摄时间（AssetEntity.createDateTime）；null 时查询走
+          // COALESCE(shot_at, created_at) 兜底。
+          shotAt: Value(item.shotAt),
           createdAt: now,
           updatedAt: now,
         ),
@@ -114,9 +117,10 @@ class PhotoRepository {
 
   /// 流式观察照片列表，支持按分类 / 已用状态 / 日期 / 星期几过滤。
   ///
-  /// [date] 与 [weekday] 在映射成领域模型后于 Dart 侧过滤：
-  /// - [date]：取 [Photo.createdAt] 的同天（忽略时分秒）；
-  /// - [weekday]：取 [Photo.createdAt.weekday]（1=周一 … 7=周日）相等。
+  /// 排序与日期语义均以「展示时间」为准（拍摄时间优先，缺失回退导入
+  /// 时间，即 [Photo.displayTime] 与 SQL 侧 COALESCE 同义）：
+  /// - [date]：取 [Photo.displayTime] 的同天（忽略时分秒）；
+  /// - [weekday]：取 [Photo.displayTime.weekday]（1=周一 … 7=周日）相等。
   Stream<List<Photo>> watchByFilter({
     int? categoryId,
     UsedStatus? status,
@@ -130,12 +134,12 @@ class PhotoRepository {
       List<Photo> list = rows.map(_toPhoto).toList();
       if (date != null) {
         list = list
-            .where((Photo p) => _isSameDay(p.createdAt, date))
+            .where((Photo p) => _isSameDay(p.displayTime, date))
             .toList();
       }
       if (weekday != null) {
         list = list
-            .where((Photo p) => p.createdAt.weekday == weekday)
+            .where((Photo p) => p.displayTime.weekday == weekday)
             .toList();
       }
       return list;
@@ -194,6 +198,7 @@ class PhotoRepository {
       durationMs: row.durationMs,
       width: row.width,
       height: row.height,
+      shotAt: row.shotAt,
     );
   }
 }

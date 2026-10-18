@@ -206,6 +206,9 @@ class _Body extends ConsumerWidget {
                   fullscreen: fullscreen,
                   onToggleFullscreen: onToggleFullscreen,
                   scaleStateController: scaleStateController,
+                  // 视频：全屏下的轻点交给 VideoPane（切播放/暂停），
+                  // 不再退出全屏；退出全屏仍可上滑。
+                  tapExitsFullscreen: false,
                   child: VideoPane(photo: photo),
                 )
               else
@@ -466,12 +469,19 @@ class _SwipeLayer extends StatefulWidget {
   final Widget child;
   /// PhotoView 缩放状态：放大态下拖图属于查看平移，跳过全屏手势判定。
   final PhotoViewScaleStateController? scaleStateController;
+  /// 全屏态「轻点」是否退出全屏（默认 true，保持照片既有行为）。
+  ///
+  /// 视频传 false：全屏下把轻点交给 [VideoPane] 自行处理（切换播放/暂停），
+  /// 避免「点画面想暂停却被判为退出全屏」。无论取值如何，全屏「上滑」退出
+  /// 路径始终保留。
+  final bool tapExitsFullscreen;
 
   const _SwipeLayer({
     required this.fullscreen,
     required this.onToggleFullscreen,
     required this.child,
     this.scaleStateController,
+    this.tapExitsFullscreen = true,
   });
 
   @override
@@ -577,7 +587,9 @@ class _SwipeLayerState extends State<_SwipeLayer> {
 
     if (widget.fullscreen) {
       if (isTap) {
-        widget.onToggleFullscreen(); // 全屏态轻点退出
+        // 视频（tapExitsFullscreen=false）在全屏下的轻点由播放器自行处理：
+        // 此处直接返回，既不退出全屏，也不进入下面的上滑判定。
+        if (widget.tapExitsFullscreen) widget.onToggleFullscreen();
         return;
       }
       if (wasZoomed) {

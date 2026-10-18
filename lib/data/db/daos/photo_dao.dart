@@ -6,6 +6,15 @@ import 'package:work_photos/data/db/tables/photo_category.dart';
 
 part 'photo_dao.g.dart';
 
+/// 排序 / 日期筛选取用的「展示时间」表达式：优先拍摄时间（shot_at），
+/// 缺失时回退导入时间（created_at）。
+///
+/// 必须用 COALESCE 而不是直接按 shot_at 排：老数据 shot_at 为 null，
+/// 直接排序会让它们全部沉到列表末尾（NULL 在倒序里排最后），
+/// 与领域模型 Photo.displayTime 的语义也不一致。
+Expression<DateTime> _shotOrCreated(Photos t) =>
+    coalesce<DateTime>(<Expression<DateTime>>[t.shotAt, t.createdAt]);
+
 /// 照片数据访问对象（DAO）。
 ///
 /// 负责照片表的复杂查询（按分类 / 已用状态 / 组合过滤）与写操作。
@@ -65,7 +74,10 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
     return query.get();
   }
 
-  /// [byFilter] 的流式版本，供 Repository 实时刷新。
+  /// [byFilter] 的流式版本，供 Repository 实时刷新（相册网格的唯一数据源）。
+  ///
+  /// 排序：`COALESCE(shot_at, created_at)` 倒序（最新拍摄在前），同一秒
+  /// 连拍 / 同批导入再按 id 倒序兜底，保证顺序稳定不抖动。
   Stream<List<PhotoRow>> watchByFilter({int? categoryId, int? usedStatus}) {
     if (categoryId != null) {
       final query = select(photos).join([
@@ -79,12 +91,22 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
         filter = filter & photos.usedStatus.equals(usedStatus);
       }
       query.where(filter);
+      query.orderBy(<OrderingTerm>[
+        OrderingTerm(
+            expression: _shotOrCreated(photos), mode: OrderingMode.desc),
+        OrderingTerm(expression: photos.id, mode: OrderingMode.desc),
+      ]);
       return query.map((row) => row.readTable(photos)).watch();
     }
     final query = select(photos);
     if (usedStatus != null) {
       query.where((p) => p.usedStatus.equals(usedStatus));
     }
+    query.orderBy(<OrderingTerm Function(Photos)>[
+      (Photos p) =>
+          OrderingTerm(expression: _shotOrCreated(p), mode: OrderingMode.desc),
+      (Photos p) => OrderingTerm(expression: p.id, mode: OrderingMode.desc),
+    ]);
     return query.watch();
   }
 
@@ -100,7 +122,8 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
   /// - [limit]：结果上限（防极端关键词全表返回拖垮 UI）。
   ///
   /// 实现要点：LEFT JOIN photo_category 保证无分类照片也能被关键词命中；
-  /// 一张照片可属多分类会重复出现，按 id 去重（保持 created_at 倒序）。
+  /// 一张照片可属多分类会重复出现，按 id 去重（保持
+  /// `COALESCE(shot_at, created_at)` 倒序）。
   Future<List<PhotoRow>> search({
     String? keyword,
     List<int> nameMatchedCategoryIds = const <int>[],
@@ -140,7 +163,7 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
       final DateTime from =
           DateTime(dateFrom.year, dateFrom.month, dateFrom.day);
       final Expression<bool> fromCond =
-          photos.createdAt.isBiggerOrEqualValue(from);
+          _shotOrCreated(photos).isBiggerOrEqualValue(from);
       cond = cond == null ? fromCond : (cond & fromCond);
     }
     if (dateTo != null) {
@@ -148,12 +171,14 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
               dateTo.day)
           .add(const Duration(days: 1));
       final Expression<bool> toCond =
-          photos.createdAt.isSmallerThanValue(toExclusive);
+          _shotOrCreated(photos).isSmallerThanValue(toExclusive);
       cond = cond == null ? toCond : (cond & toCond);
     }
     if (cond != null) query.where(cond);
     query.orderBy(<OrderingTerm>[
-      OrderingTerm(expression: photos.createdAt, mode: OrderingMode.desc),
+      OrderingTerm(
+          expression: _shotOrCreated(photos), mode: OrderingMode.desc),
+      OrderingTerm(expression: photos.id, mode: OrderingMode.desc),
     ]);
     query.limit(limit);
     return query.get().then((List<TypedResult> rows) {

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:photo_manager/photo_manager.dart' as pm;
 
 import 'package:work_photos/core/utils/duration_format.dart';
+import 'package:work_photos/core/utils/media_count_label.dart';
 import 'package:work_photos/features/me/settings_provider.dart';
 import 'package:work_photos/widgets/continuous_grid_delegate.dart';
 import 'package:work_photos/widgets/grid_drag_select_controller.dart';
@@ -15,6 +16,16 @@ import 'package:work_photos/widgets/thumbnail.dart';
 /// 统一显示为中文「最近」，避免界面出现英文。
 String albumDisplayName(pm.AssetPathEntity album) =>
     album.isAll ? '最近' : album.name;
+
+/// 分组计数文案：统计图片 / 视频构成后交给 [mediaCountLabel]（与相册页同口径）。
+String _assetGroupCountLabel(List<pm.AssetEntity> assets) {
+  final int videos =
+      assets.where((pm.AssetEntity a) => a.type == pm.AssetType.video).length;
+  return mediaCountLabel(
+    imageCount: assets.length - videos,
+    videoCount: videos,
+  );
+}
 
 /// 视频时长角标：半透明深色底 + 播放三角 + 「m:ss」。
 ///
@@ -388,7 +399,7 @@ class _AlbumBrowserState extends ConsumerState<AlbumBrowser>
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                '${entry.value.length}项',
+                                _assetGroupCountLabel(entry.value),
                                 style: TextStyle(
                                   color: Theme.of(context)
                                       .colorScheme

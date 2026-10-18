@@ -88,6 +88,8 @@ class BackupService {
             'durationMs': row.durationMs,
             'width': row.width,
             'height': row.height,
+            // 拍摄时间（ISO8601）；老数据的 null 保持为 null。
+            'shotAt': row.shotAt?.toIso8601String(),
             'createdAt': row.createdAt.toIso8601String(),
             'updatedAt': row.updatedAt.toIso8601String(),
           },
@@ -171,6 +173,9 @@ class BackupService {
           durationMs: Value(m['durationMs'] as int?),
           width: Value(m['width'] as int?),
           height: Value(m['height'] as int?),
+          // 拍摄时间：旧备份没有该键 → tryParse('') 返回 null，
+          // 查询时由 COALESCE(shot_at, created_at) 兜底，不报错。
+          shotAt: Value(DateTime.tryParse(m['shotAt'] as String? ?? '')),
           createdAt: DateTime.tryParse(m['createdAt'] as String? ?? '') ??
               DateTime.now(),
           updatedAt: DateTime.tryParse(m['updatedAt'] as String? ?? '') ??
