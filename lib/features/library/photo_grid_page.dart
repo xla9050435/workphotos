@@ -390,8 +390,11 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
                       SliverToBoxAdapter(
                         child: Container(
                           color: Theme.of(context).scaffoldBackgroundColor,
+                          // 垂直 padding 取 4（而非 8）：日期头恒定高度 =
+                          // 48（「全选」按钮占位）+ 4×2 = 56dp。取 4 是为了让
+                          // 未选中态尽量贴近原有的紧凑观感（改前约 36dp）。
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                              horizontal: 12, vertical: 4),
                           child: Row(
                             children: <Widget>[
                               Container(
@@ -423,8 +426,29 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
                               // 多选态下提供「全选」：一键选中该日期组的全部照片。
                               // M3 触控目标：交互元素点击区至少 48x48dp。
                               const Spacer(),
-                              if (hasSelection)
-                                TextButton(
+                              // 关键：按钮始终渲染，只用 Visibility 控制可见性，
+                              // 靠 maintainSize 让它在「不可见」时仍然占住 48x48。
+                              //
+                              // 为什么不能用 `if (hasSelection)` 直接插入：未选中时
+                              // 这行的高度由旁边 fontSize:15 的日期文字决定（约
+                              // 20dp），一旦有选中项，插入的 TextButton 带
+                              // minimumSize: Size(48,48)，Row 高度就从 20dp 撑到
+                              // 48dp，下面所有网格整体下移约 28dp——用户看到的就是
+                              // 「点一下照片选中，照片整体往下挪」。
+                              // 恒定占位后，行高与选中态无关，选中/取消都不位移。
+                              // 日期头的恒定高度 = 48（本按钮占位）+ 4×2（容器
+                              // 垂直 padding）= 56dp；padding 取 4 而不是 8，
+                              // 是为了让未选中态尽量贴近原有的紧凑观感（约 36dp）。
+                              //
+                              // 也不要为了消位移把 minimumSize 改小（32dp 之类）：
+                              // 既违反 M3 的 48x48 触控目标、点击变难，也仍会留下
+                              // 12dp 的跳动。位移必须靠「恒定占位」解决。
+                              Visibility(
+                                visible: hasSelection,
+                                maintainSize: true,
+                                maintainAnimation: true,
+                                maintainState: true,
+                                child: TextButton(
                                   style: TextButton.styleFrom(
                                     minimumSize: const Size(48, 48),
                                     padding: const EdgeInsets.symmetric(
@@ -433,6 +457,7 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
                                   onPressed: () => _selectAllGroup(group),
                                   child: const Text('全选'),
                                 ),
+                              ),
                             ],
                           ),
                         ),
