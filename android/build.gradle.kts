@@ -2,6 +2,14 @@ import com.android.build.gradle.BaseExtension
 
 allprojects {
     repositories {
+        // 同 settings.gradle.kts：镜像优先，官方源兜底。
+        // 本段覆盖所有子项目（:jni、:photo_manager、:share_plus 等）的
+        // android 依赖解析，androidx.exifinterface:1.4.1 就走这里
+        // （直连 dl.google.com 超时；阿里云 google 镜像同路径实测 200 / 0.46s）。
+        // 注意：镜像必须排在 google() 之前——Gradle 按声明顺序逐个尝试仓库，
+        // 排在后面的话仍会先撞上 dl.google.com 的超时。
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
         google()
         mavenCentral()
     }
