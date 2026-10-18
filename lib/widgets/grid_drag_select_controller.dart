@@ -50,6 +50,7 @@ class GridDragSelectController<T> {
     required this.scrollController,
     required this.viewportKey,
     this.onStateChanged,
+    this.rowMembersOf,
     this.decideAxis,
   });
 
@@ -81,6 +82,17 @@ class GridDragSelectController<T> {
   final DragSelectAxis? Function(
       Offset delta, Offset global, GridHit<T>? downHit)? decideAxis;
 
+  /// 整行连选扩展：返回与 [item] 同一行的全部项（**含 [item] 自身**）。
+  ///
+  /// 仅用于**纵列连选**（[DragSelectAxis.verticalColumn]）路径：命中一格时按
+  /// 整行处理，让「竖向滑过一行就把这一行都选中」成立。宿主按各网格项渲染后
+  /// rect 的 `top` 判定同行（比按 index 换算整行稳：列数可变，捏合缩放走连续
+  /// 列数时索引换算是错的）。
+  ///
+  /// 返回 null 或空表示不支持整行连选，退回单格行为。**横向连选不使用本回调**，
+  /// 保持原有橡皮筋语义。
+  final List<T> Function(T item)? rowMembersOf;
+
   /// 最小拖动位移（逻辑像素）：低于该值的移动视为点按，不进入连选。
   /// 对齐 Flutter 触摸 slop（kTouchSlop=18）：低于它的移动 tap 手势本就
   /// 不会提交，避免连选置位与点按切换在临界位移上双重触发。
@@ -111,6 +123,13 @@ class GridDragSelectController<T> {
   /// 选中状态决定（已选 → 减模式，未选 → 加模式）。
   bool _remove = false;
   bool _modeDecided = false;
+
+  /// 本次拖动是否为纵向整行连选（[DragSelectAxis.verticalColumn]）。
+  /// 只有它为 true 时才按 [rowMembersOf] 展开整行；横向连选恒为 false。
+  bool _verticalColumn = false;
+  /// 起点行的全部项：横向/回落时为单元素 {_firstHit}。与「起点只记录不动作」
+  /// 一致——后续命中落在起点行内时不参与加减模式判定、也不触发选中变化。
+  Set<T> _firstRow = <T>{};
 
   // —— 边缘自动滚动 ——
   Timer? _autoScrollTimer;
@@ -154,14 +173,25 @@ class GridDragSelectController<T> {
       _axisDecided = true; // 判定一次后锁定
       if (axis == DragSelectAxis.scroll) return;
       _selecting = true;
-      // Google 相册语义：起点格随拖动**立即生效**——按住未选中的格子
-      // 开始滑动，该格即刻入选（修复「滑动后第一张没有被选中」）。
-      // 起点已选中的（减模式锚点）保持选中，由后续途经项决定加减。
+      // 锁定本次拖动是否为纵向整行连选：只有它才按行展开（横向连选不变）。
+      _verticalColumn = axis == DragSelectAxis.verticalColumn;
+      // Google 相册语义：起点随拖动**立即生效**。
+      // - 纵向整行模式：起手格按**整行**处理（按住即整行选中，补全锚点行）；
+      // - 横向 / 单格回落：仍是「起点格未被选中则选中它」。
+      // 起点行 [_firstRow] 记下来，后续命中落在其中时不参与加减判定。
       // （局部变量承接 _downHit：非 final 字段无法做空提升。）
       final GridHit<T>? down = _downHit;
       if (down != null) {
         _firstHit = down.item;
-        if (!isSelected(down.item)) onAdd(down.item);
+        _firstRow = _rowMembers(down.item).toSet();
+        if (_verticalColumn && rowMembersOf != null) {
+          // 整行 add-only：把锚点行补全为整行选中。
+          for (final T m in _firstRow) {
+            onAdd(m);
+          }
+        } else if (!isSelected(down.item)) {
+          onAdd(down.item);
+        }
       }
       onStateChanged?.call();
     }
@@ -223,21 +253,41 @@ class GridDragSelectController<T> {
     final GridHit<T>? hit = hitTest(global);
     if (hit == null) return;
     if (_firstHit == null) {
-      _firstHit = hit.item; // 起点：只记录不动作
+      // 起点：只记录不动作（并记下起点行，后续同处命中不作加减判定）。
+      _firstHit = hit.item;
+      _firstRow = _rowMembers(hit.item).toSet();
       return;
     }
     if (!_modeDecided) {
-      // 仍在起点格内（插值采样会重复命中起点）：不据此决定加减模式——
-      // 起点已由长按加入选择集，按它判定会错把「加」定成「减」。
-      if (hit.item == _firstHit) return;
+      // 仍在起点（行）内（插值采样会重复命中起点）：不据此决定加减模式——
+      // 起点已由长按/起手加入选择集，按它判定会错把「加」定成「减」。
+      // 纵向整行模式下把「起点格」放宽为「起点行」，避免整行补选后被误判为减。
+      if (_firstRow.contains(hit.item)) return;
       _remove = isSelected(hit.item);
       _modeDecided = true;
     }
-    if (_remove) {
-      onRemove(hit.item);
-    } else {
-      onAdd(hit.item);
+    // 纵向整行连选：命中一格 → 整行沿用同一加/减模式逐个处理（横向不变）。
+    // 幂等性：宿主 onAdd/onRemove 自带去重（选择集未变化则不 setState），
+    // 同一行被插值采样反复命中也不会重复刷新，不会抖动。
+    final List<T> members = _rowMembers(hit.item);
+    for (final T m in members) {
+      if (_remove) {
+        onRemove(m);
+      } else {
+        onAdd(m);
+      }
     }
+  }
+
+  /// 命中项应展开处理的一组项：纵向整行模式返回整行，其余返回 [item] 单格。
+  ///
+  /// 横向连选与单格回落都走单元素分支（保证「横向保持原样」）；纵向整行依赖
+  /// 宿主提供的 [rowMembersOf]，其返回 null/空时同样回落为单格。
+  List<T> _rowMembers(T item) {
+    if (!_verticalColumn) return <T>[item];
+    final List<T>? row = rowMembersOf?.call(item);
+    if (row == null || row.isEmpty) return <T>[item];
+    return row;
   }
 
   /// 指针相对视口上/下边缘触发区的自动滚动速度（px/tick）。
@@ -317,9 +367,11 @@ class GridDragSelectController<T> {
     _stopAutoScroll();
     _selecting = false;
     _axisDecided = false;
+    _verticalColumn = false;
     _downPos = null;
     _downHit = null;
     _firstHit = null;
+    _firstRow = <T>{};
     _remove = false;
     _modeDecided = false;
     _lastPointerPos = null;

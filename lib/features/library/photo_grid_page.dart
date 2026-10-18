@@ -71,6 +71,7 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
       GridDragSelectController<int>(
     hasSelection: () => ref.read(selectionProvider).isNotEmpty,
     hitTest: _hitPhoto,
+    rowMembersOf: _rowMembersOf,
     isSelected: (int id) => ref.read(selectionProvider).contains(id),
     onAdd: (int id) {
       final Set<int> current = Set<int>.from(ref.read(selectionProvider));
@@ -312,6 +313,32 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
       }
     }
     return null;
+  }
+
+  /// 返回与 [id] 同一行的全部照片 id（含自身），用于纵向整行连选。
+  ///
+  /// 为什么按 rect.top 判同行：网格列数可变（捏合缩放走连续列数），按 index
+  /// 换算「整行」会算错；用各格子渲染后的屏幕矩形 top 判定同行，与布局解耦。
+  /// 只统计当前已布局的格子（滚出屏幕的取不到 rect，跳过、不抛异常）；
+  /// 自身取不到 rect 时返回自身单元素，退回单格行为。
+  List<int> _rowMembersOf(int id) {
+    final RenderBox? selfBox =
+        _itemKeys[id]?.currentContext?.findRenderObject() as RenderBox?;
+    if (selfBox == null) return <int>[id];
+    final double top = selfBox.localToGlobal(Offset.zero).dy;
+    final List<(double, int)> row = <(double, int)>[];
+    for (final MapEntry<int, GlobalKey> e in _itemKeys.entries) {
+      final RenderBox? box =
+          e.value.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null) continue;
+      final Offset off = box.localToGlobal(Offset.zero);
+      if ((off.dy - top).abs() < 1.0) {
+        row.add((off.dx, e.key));
+      }
+    }
+    if (row.isEmpty) return <int>[id];
+    row.sort((a, b) => a.$1.compareTo(b.$1));
+    return row.map((e) => e.$2).toList();
   }
 
   /// 日期头「全选」：把该组全部照片加入选择集。

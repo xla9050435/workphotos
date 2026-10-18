@@ -138,6 +138,7 @@ class _AlbumBrowserState extends ConsumerState<AlbumBrowser>
       GridDragSelectController<pm.AssetEntity>(
     hasSelection: () => widget.selected.isNotEmpty,
     hitTest: _hitAsset,
+    rowMembersOf: _rowMembersOf,
     isSelected: (pm.AssetEntity asset) => widget.selected.contains(asset),
     onAdd: widget.onSelectAsset,
     onRemove: widget.onRemoveAsset,
@@ -240,6 +241,35 @@ class _AlbumBrowserState extends ConsumerState<AlbumBrowser>
       }
     }
     return null;
+  }
+
+  /// 返回与 [asset] 同一行的全部资产（含自身），用于纵向整行连选。
+  ///
+  /// 为什么按 rect.top 判同行：网格列数可变（捏合缩放走连续列数 R10），按
+  /// index 换算「整行」在非整数列数、或存在分组头部时会算错；直接用每个格子
+  /// 渲染后的屏幕矩形 top 判定同行，与具体布局解耦、更稳。
+  ///
+  /// 只统计当前已布局（能取到 RenderBox）的格子：滚出屏幕的取不到 rect，跳过
+  /// 即可、不抛异常；若自身格子都取不到（异常态），返回自身单元素，退回单格。
+  List<pm.AssetEntity> _rowMembersOf(pm.AssetEntity asset) {
+    final RenderBox? selfBox =
+        _itemKeys[asset.id]?.currentContext?.findRenderObject() as RenderBox?;
+    if (selfBox == null) return <pm.AssetEntity>[asset];
+    final double top = selfBox.localToGlobal(Offset.zero).dy;
+    final List<(double, pm.AssetEntity)> row = <(double, pm.AssetEntity)>[];
+    for (final MapEntry<String, GlobalKey> e in _itemKeys.entries) {
+      final RenderBox? box =
+          e.value.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null) continue;
+      final Offset off = box.localToGlobal(Offset.zero);
+      if ((off.dy - top).abs() < 1.0) {
+        final pm.AssetEntity? a = _assetById[e.key];
+        if (a != null) row.add((off.dx, a));
+      }
+    }
+    if (row.isEmpty) return <pm.AssetEntity>[asset];
+    row.sort((a, b) => a.$1.compareTo(b.$1));
+    return row.map((e) => e.$2).toList();
   }
 
   @override

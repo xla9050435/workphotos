@@ -40,8 +40,22 @@ class FilterBar extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         children: <Widget>[
-          _chip('全部分类', filter.categoryId == null,
-              () => _setCategory(ref, null)),
+          // 三个分类芯片互斥，唯一真相是 (categoryId, onlyUncategorized) 的组合：
+          // - 全部分类：categoryId == null && !onlyUncategorized
+          // - 某个分类：categoryId == id   && !onlyUncategorized
+          // - 未分类  ：categoryId == null &&  onlyUncategorized
+          // 判据里必须同时看两个字段，否则「未分类」选中时「全部分类」也会
+          // 一起高亮（两者 categoryId 都是 null）。
+          _chip(
+            '全部分类',
+            filter.categoryId == null && !filter.onlyUncategorized,
+            () => _setCategory(ref, null),
+          ),
+          _chip(
+            '未分类',
+            filter.categoryId == null && filter.onlyUncategorized,
+            () => _setCategory(ref, null, onlyUncategorized: true),
+          ),
           // 加载中 / 加载失败：不渲染分类芯片（避免闪「无分类」或空白）。
           if (catsAsync.isLoading || catsAsync.hasError)
             const SizedBox.shrink()
@@ -49,7 +63,9 @@ class FilterBar extends ConsumerWidget {
             for (final Category c in cats)
               _chip(
                 c.name,
-                filter.categoryId == c.id,
+                // 具体分类要求 onlyUncategorized == false：切到某个分类时
+                // 必须同时清掉「未分类」，两者不会同时高亮。
+                filter.categoryId == c.id && !filter.onlyUncategorized,
                 () => _setCategory(ref, c.id),
               ),
           const VerticalDivider(width: 16),
@@ -120,13 +136,22 @@ class FilterBar extends ConsumerWidget {
 
   // —— 以下各 setter 在更新单一字段时保留其它筛选条件 ——
 
-  void _setCategory(WidgetRef ref, int? categoryId) {
+  /// 设置分类维度：「全部分类」/「未分类」/「某个分类」三态互斥。
+  ///
+  /// 统一在这里落「未分类」开关，避免每个调用点各写一遍导致状态组合非法
+  /// （例如 categoryId=null 但 onlyUncategorized 没被清掉）。
+  /// - `categoryId == null && !onlyUncategorized` → 全部分类
+  /// - `categoryId == null && onlyUncategorized` → 未分类
+  /// - `categoryId != null` → 某个分类（onlyUncategorized 恒为 false）
+  void _setCategory(WidgetRef ref, int? categoryId,
+      {bool onlyUncategorized = false}) {
     final PhotoFilter f = ref.read(gridFilterProvider);
     ref.read(gridFilterProvider.notifier).state = PhotoFilter(
       categoryId: categoryId,
       status: f.status,
       date: f.date,
       weekday: f.weekday,
+      onlyUncategorized: onlyUncategorized,
     );
   }
 
@@ -137,6 +162,7 @@ class FilterBar extends ConsumerWidget {
       status: status,
       date: f.date,
       weekday: f.weekday,
+      onlyUncategorized: f.onlyUncategorized,
     );
   }
 
@@ -147,6 +173,7 @@ class FilterBar extends ConsumerWidget {
       status: f.status,
       date: date,
       weekday: f.weekday,
+      onlyUncategorized: f.onlyUncategorized,
     );
   }
 
@@ -157,6 +184,7 @@ class FilterBar extends ConsumerWidget {
       status: f.status,
       date: f.date,
       weekday: weekday,
+      onlyUncategorized: f.onlyUncategorized,
     );
   }
 }

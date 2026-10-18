@@ -26,11 +26,22 @@ class PhotoFilter {
   final DateTime? date;
   final int? weekday;
 
+  /// 仅看「未归入任何分类」的照片。
+  ///
+  /// 与 [categoryId] **互斥**：`onlyUncategorized == true` 时 [categoryId]
+  /// 必须为 null（"未分类"与"某个分类"不可能同时成立）。筛选条三个芯片
+  /// （全部分类 / 某个分类 / 未分类）的唯一真相就是这两个字段的组合：
+  /// - 全部分类：`categoryId == null && !onlyUncategorized`
+  /// - 某个分类：`categoryId == id && !onlyUncategorized`
+  /// - 未分类：  `categoryId == null &&  onlyUncategorized`
+  final bool onlyUncategorized;
+
   const PhotoFilter({
     this.categoryId,
     this.status,
     this.date,
     this.weekday,
+    this.onlyUncategorized = false,
   });
 
   /// 日期的「天」粒度键（忽略时分秒），用于在 [==] / [hashCode] 中比较。
@@ -44,14 +55,16 @@ class PhotoFilter {
           categoryId == other.categoryId &&
           status == other.status &&
           _dayKey(date) == _dayKey(other.date) &&
-          weekday == other.weekday;
+          weekday == other.weekday &&
+          onlyUncategorized == other.onlyUncategorized;
 
   @override
   int get hashCode =>
       categoryId.hashCode ^
       status.hashCode ^
       _dayKey(date).hashCode ^
-      weekday.hashCode;
+      weekday.hashCode ^
+      onlyUncategorized.hashCode;
 }
 
 /// 照片列表（流式），按 [filter] 过滤。
@@ -63,6 +76,7 @@ final photoListProvider =
     status: filter.status,
     date: filter.date,
     weekday: filter.weekday,
+    onlyUncategorized: filter.onlyUncategorized,
   );
 });
 

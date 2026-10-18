@@ -25,6 +25,29 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
   /// 构造时绑定所属数据库。
   PhotoDao(super.db);
 
+  /// 「未归入任何分类」条件：`photos.id NOT IN (SELECT photo_id FROM ...)`。
+  ///
+  /// 为什么用 NOT IN 子查询，而不是 `LEFT JOIN photo_category + IS NULL`：
+  /// - 分类路径（`categoryId != null`）本身已经 `innerJoin` 了 photo_category，
+  ///   一张照片属于 N 个分类就产生 N 行；再 LEFT JOIN 一次会把行数乘成 N×M，
+  ///   必须 `DISTINCT`/去重才能还原，而 drift 的 joined 查询是
+  ///   `row.readTable(photos)` 逐行映射——**重复行会直接变成重复的网格项**
+  ///   （用户看到同一张照片出现多次），后续还要在 DAO 外层去重，容易漏；
+  /// - 子查询不改变外层结果集的行数（每张照片仍是一行），因此不影响既有的
+  ///   `ORDER BY COALESCE(shot_at, created_at) DESC` 与 `limit`，也不需要
+  ///   在任何调用点做去重；
+  /// - 性能上 NOT IN 与 LEFT JOIN + IS NULL 在本数据量级等价（两表都只有
+  ///   索引列参与），但前者语义更直白。
+  ///
+  /// 流式刷新：子查询是写进**同一个** [GenerationContext] 的
+  /// （`_InSelectExpression._writeValues` → `_select.writeInto(context)`，
+  /// 而 `writeResultSet` 会把子查询的 FROM 表加进 `context.watchedTables`），
+  /// 所以 photo_category 一变，网格流会自动重算——不需要手动 invalidate。
+  Expression<bool> _uncategorized() => photos.id.isNotInQuery(
+        selectOnly(photoCategory)
+          ..addColumns(<Expression<Object>>[photoCategory.photoId]),
+      );
+
   /// 插入一条照片记录，返回自增主键。
   Future<int> insert(PhotosCompanion companion) =>
       into(photos).insert(companion);
@@ -53,7 +76,8 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
       (select(photos)..where((p) => p.usedStatus.equals(usedStatus))).get();
 
   /// 组合过滤：可选分类 + 可选已用状态。
-  Future<List<PhotoRow>> byFilter({int? categoryId, int? usedStatus}) {    if (categoryId != null) {
+  Future<List<PhotoRow>> byFilter({int? categoryId, int? usedStatus}) {
+    if (categoryId != null) {
       final query = select(photos).join([
         innerJoin(
           photoCategory,
@@ -78,7 +102,15 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
   ///
   /// 排序：`COALESCE(shot_at, created_at)` 倒序（最新拍摄在前），同一秒
   /// 连拍 / 同批导入再按 id 倒序兜底，保证顺序稳定不抖动。
-  Stream<List<PhotoRow>> watchByFilter({int? categoryId, int? usedStatus}) {
+  ///
+  /// [onlyUncategorized]：仅「未归入任何分类」的照片（筛选条「未分类」）。
+  /// 与 [categoryId] 语义互斥；若调用方同时传了两者，结果是空集
+  /// （显式与运算，而不是悄悄忽略其中一个条件）。
+  Stream<List<PhotoRow>> watchByFilter({
+    int? categoryId,
+    int? usedStatus,
+    bool onlyUncategorized = false,
+  }) {
     if (categoryId != null) {
       final query = select(photos).join([
         innerJoin(
@@ -90,6 +122,9 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
       if (usedStatus != null) {
         filter = filter & photos.usedStatus.equals(usedStatus);
       }
+      if (onlyUncategorized) {
+        filter = filter & _uncategorized();
+      }
       query.where(filter);
       query.orderBy(<OrderingTerm>[
         OrderingTerm(
@@ -99,9 +134,17 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
       return query.map((row) => row.readTable(photos)).watch();
     }
     final query = select(photos);
+    Expression<bool>? cond;
     if (usedStatus != null) {
-      query.where((p) => p.usedStatus.equals(usedStatus));
+      cond = photos.usedStatus.equals(usedStatus);
     }
+    if (onlyUncategorized) {
+      // 简单分支同样要加：否则「未分类 + 已用/未用」这一类不带 categoryId
+      // 的组合会静默退化成不过滤（两条路径必须口径一致）。
+      final Expression<bool> un = _uncategorized();
+      cond = cond == null ? un : (cond & un);
+    }
+    if (cond != null) query.where(cond);
     query.orderBy(<OrderingTerm Function(Photos)>[
       (Photos p) =>
           OrderingTerm(expression: _shotOrCreated(p), mode: OrderingMode.desc),

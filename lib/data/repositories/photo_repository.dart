@@ -128,15 +128,23 @@ class PhotoRepository {
   /// 时间，即 [Photo.displayTime] 与 SQL 侧 COALESCE 同义）：
   /// - [date]：取 [Photo.displayTime] 的同天（忽略时分秒）；
   /// - [weekday]：取 [Photo.displayTime.weekday]（1=周一 … 7=周日）相等。
+  /// - [onlyUncategorized]：仅「未归入任何分类」的照片，与 [categoryId]
+  ///   互斥（由 [PhotoFilter] 的组合规则保证），过滤在 SQL 侧完成，
+  ///   这样与已用状态 / 分页 / 排序同一条语句生效。
   Stream<List<Photo>> watchByFilter({
     int? categoryId,
     UsedStatus? status,
     DateTime? date,
     int? weekday,
+    bool onlyUncategorized = false,
   }) {
     final int? usedValue = status?.value;
     return _db.photoDao
-        .watchByFilter(categoryId: categoryId, usedStatus: usedValue)
+        .watchByFilter(
+          categoryId: categoryId,
+          usedStatus: usedValue,
+          onlyUncategorized: onlyUncategorized,
+        )
         .map((List<PhotoRow> rows) {
       List<Photo> list = rows.map(_toPhoto).toList();
       if (date != null) {
