@@ -19,10 +19,14 @@ enum DragSelectAxis {
   /// 横向主导：橡皮筋式滑动多选。
   horizontal,
 
-  /// 纵向主导且起点命中网格项：纵列连选（沿一列纵向滑过连选，R4）。
+  /// 纵向主导且起点命中**已选中**的网格项：纵列连选（沿一列纵向滑过连选，R4）。
+  /// 起点未选中（或未命中）的纵向拖动一律视为滚动意图，见 [scroll]。
   verticalColumn,
 
-  /// 纵向主导且起点未命中网格项（空白/日期头）：滚动意图，交给列表滚动。
+  /// 纵向主导且起点未命中网格项、或起点的格子尚未选中：滚动意图，交给列表滚动。
+  ///
+  /// 多选态下「未选中格子起手纵滑」也走这里——否则网格铺满全屏时用户无处
+  /// 起手滚动。想纵列连选请先点中一张作为锚点再从那格起手。
   scroll,
 }
 
@@ -165,12 +169,24 @@ class GridDragSelectController<T> {
     _handleAutoScroll(global);
   }
 
-  /// 默认轴向判定：横向主导 → 连选；纵向主导时起点命中网格项且指针仍在
-  /// 其横向范围内 → 纵列连选（R4），否则视为滚动意图。
+  /// 默认轴向判定：横向主导 → 连选；纵向主导时**起点命中且该格已被选中**
+  /// 且指针仍在其横向范围内 → 纵列连选（R4），否则视为滚动意图。
+  ///
+  /// 为什么纵列连选要求「起点格已选中」：网格通常铺满整屏，多选态下用户
+  /// 几乎找不到「空白起手」的位置。若任何格子起手纵滑都判成纵列连选，
+  /// 结果就是既误选了沿途照片、又把列表锁成不可滚动
+  /// （`physics: NeverScrollableScrollPhysics`）——多选态下根本滚不动。
+  /// 现在的语义：
+  /// - 纵向滑动默认 = 滚动（多选态下也能正常浏览）；
+  /// - 想纵列连选：先点中一张作为锚点，再从**那张**起手纵向拖；
+  /// - 横向滑动保持原有橡皮筋连选，不受影响。
   DragSelectAxis _defaultDecideAxis(
       Offset delta, Offset global, GridHit<T>? downHit) {
     if (delta.dy.abs() < delta.dx.abs()) return DragSelectAxis.horizontal;
     if (downHit != null &&
+        // 仅「已选中」的格子可作为纵列连选锚点：未选中格子起手纵滑 →
+        // 滚动，避免「一滑就误选 + 页面滚不动」。
+        isSelected(downHit.item) &&
         global.dx >= downHit.rect.left &&
         global.dx <= downHit.rect.right) {
       return DragSelectAxis.verticalColumn;

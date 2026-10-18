@@ -57,21 +57,52 @@ class _ImportPageState extends ConsumerState<ImportPage>
   late final BackHandler _backHandler = () {
     if (_selected.isNotEmpty) {
       setState(() => _selected.clear());
+      _syncBackBlock(false); // 选中已清空 → 期望解除拦截
       return true;
     }
     return false;
   };
-  bool _backBlocked = false;
 
-  /// 按当前选择态同步注册/注销返回拦截（build 中调用）。
+  /// 期望状态：当前**应该**是否拦截系统返回（选中集非空即为 true）。
+  bool _wantBackBlock = false;
+  /// 实际状态：是否**已经真正** push 到 [BackBlocker]。
+  ///
+  /// 与 [_wantBackBlock] 分离，是为了让「已注册」这一事实有唯一真相，
+  /// 既不会重复 push，也不会 pop 一个还没 push 的 handler（见 dispose）。
+  bool _backBlocked = false;
+  /// 是否已排入帧后回调：合并同一帧内的多次切换，只落定一次。
+  bool _backSyncScheduled = false;
+
+  /// 请求把返回拦截同步为 [block] —— **必须在 build 之外调用**。
+  ///
+  /// 为什么不能在 build 里直接 push/pop（旧实现的 bug）：
+  /// [BackBlocker.count] 被 Shell（`AppScaffold` 的 `ValueListenableBuilder`）
+  /// 监听，而本页是 `AppScaffold` 的**后代**。在 build 中改 count 会让 Shell
+  /// 在「正在 build 本页」时被 markNeedsBuild，Flutter 直接抛
+  /// `setState() or markNeedsBuild() called during build`：本次 build 中断、
+  /// Shell 的 builder 不会重建，`PopScope.canPop` 停留在旧值 `true`，
+  /// 系统返回于是直接 pop 到根 —— **退出软件**。
+  ///
+  /// 现在：改选中态时只登记「期望」，真正的 push/pop 排到**帧后**执行，
+  /// count 的变更发生在 build 之外，Shell 正常重建，canPop 才会变 false。
   void _syncBackBlock(bool block) {
-    if (block && !_backBlocked) {
-      BackBlocker.push(_backHandler);
-      _backBlocked = true;
-    } else if (!block && _backBlocked) {
-      BackBlocker.pop(_backHandler);
-      _backBlocked = false;
-    }
+    if (block == _wantBackBlock) return; // 期望没变：无需排队
+    _wantBackBlock = block;
+    if (_backSyncScheduled) return; // 已有帧后回调，届时按最新期望落定
+    _backSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _backSyncScheduled = false;
+      // 页面已销毁：注册/注销交给 dispose 处理（此处不能再碰 BackBlocker，
+      // 否则可能为一个已卸载页面留下拦截器）。
+      if (!mounted) return;
+      if (_wantBackBlock == _backBlocked) return; // 已与期望一致
+      if (_wantBackBlock) {
+        BackBlocker.push(_backHandler);
+      } else {
+        BackBlocker.pop(_backHandler);
+      }
+      _backBlocked = _wantBackBlock;
+    });
   }
 
   /// 星期几标签（周一至周日），索引 i 对应 [DateTime.weekday] = i+1。
@@ -114,7 +145,15 @@ class _ImportPageState extends ConsumerState<ImportPage>
 
   @override
   void dispose() {
-    if (_backBlocked) BackBlocker.pop(_backHandler);
+    // 只有**确实 push 过**（_backBlocked）才需要 pop。若 push 还躺在帧后
+    // 回调队列里没执行：回调里的 `if (!mounted) return` 会跳过它（等于从未
+    // 注册），此时 _backBlocked 仍为 false，这里也就不 pop —— 状态自洽。
+    // 反过来若已注册，则必须 pop，否则拦截器会随页面卸载残留在全局栈里，
+    // 让 Shell 的 canPop 永远为 false（返回键彻底失效）。
+    if (_backBlocked) {
+      _backBlocked = false;
+      BackBlocker.pop(_backHandler);
+    }
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -286,12 +325,16 @@ class _ImportPageState extends ConsumerState<ImportPage>
         _selected.add(asset);
       }
     });
+    // 选中集变化后同步返回拦截（首张入选 → 注册；清空 → 注销）。
+    // 必须在 build 之外调用，见 [_syncBackBlock] 的说明。
+    _syncBackBlock(_selected.isNotEmpty);
   }
 
   /// 滑动连选「加模式」：仅添加选中（不切换）。
   void _selectAsset(pm.AssetEntity asset) {
     if (!_selected.contains(asset)) {
       setState(() => _selected.add(asset));
+      _syncBackBlock(true); // 必然非空，无需再算 isNotEmpty
     }
   }
 
@@ -299,12 +342,14 @@ class _ImportPageState extends ConsumerState<ImportPage>
   void _deselectAsset(pm.AssetEntity asset) {
     if (_selected.remove(asset)) {
       setState(() {});
+      _syncBackBlock(_selected.isNotEmpty); // 可能减到 0 张 → 解除拦截
     }
   }
 
   /// 日期头「全选」：把该组全部资产加入选择集。
   void _selectGroup(List<pm.AssetEntity> assets) {
     setState(() => _selected.addAll(assets));
+    _syncBackBlock(true); // 全选后必然非空
   }
 
   /// 筛选条用的统一芯片样式（与 [FilterBar] 视觉一致）。
@@ -419,6 +464,7 @@ class _ImportPageState extends ConsumerState<ImportPage>
     );
     if (mounted) {
       setState(() => _selected.clear());
+      _syncBackBlock(false); // 导入完成清空选中 → 解除返回拦截
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('已引用导入 $n 项媒体（仅记录引用，未复制文件）')),
       );
@@ -428,8 +474,9 @@ class _ImportPageState extends ConsumerState<ImportPage>
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    // 多选态 → 拦截系统返回（返回=清空选中，而非退出软件）。
-    _syncBackBlock(_selected.isNotEmpty);
+    // 注意：返回拦截的注册/注销**不在 build 里做**（旧实现就是这么踩坑的）：
+    // 在 build 中改 BackBlocker.count 会触发 Shell 的 setState during build，
+    // 详见 [_syncBackBlock]。现在改为在每个改变选中集的入口处调用它。
     return PopScope(
       // 选中态下：返回应"退出选中界面"而非退出软件；非选中态则正常返回
       //（到达根则退出）。注：分支内 PopScope 拦不到系统返回（go_router
@@ -439,6 +486,7 @@ class _ImportPageState extends ConsumerState<ImportPage>
       onPopInvokedWithResult: (bool didPop, Object? result) {
         if (!didPop) {
           setState(() => _selected.clear());
+          _syncBackBlock(false); // 与上面清空选中保持一致
         }
       },
       child: Scaffold(

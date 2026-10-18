@@ -115,22 +115,54 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
   /// 多选态下：返回 = 退出多选（消费本次返回）；非多选态不拦截。
   late final BackHandler _backHandler = () {
     if (ref.read(selectionProvider).isNotEmpty) {
+      // 置空后 selectionProvider 变化会触发 build 里的 ref.listen，
+      // 由它把返回拦截同步为「解除」，此处不必额外调用。
       ref.read(selectionProvider.notifier).state = <int>{};
       return true;
     }
     return false;
   };
-  bool _backBlocked = false;
 
-  /// 按当前选择态同步注册/注销返回拦截（build 中调用）。
+  /// 期望状态：当前**应该**是否拦截系统返回（选中集非空即为 true）。
+  bool _wantBackBlock = false;
+  /// 实际状态：是否**已经真正** push 到 [BackBlocker]。
+  ///
+  /// 与 [_wantBackBlock] 分离，是为了让「已注册」这一事实有唯一真相，
+  /// 既不会重复 push，也不会 pop 一个还没 push 的 handler（见 dispose）。
+  bool _backBlocked = false;
+  /// 是否已排入帧后回调：合并同一帧内的多次切换，只落定一次。
+  bool _backSyncScheduled = false;
+
+  /// 请求把返回拦截同步为 [block] —— **必须在 build 之外调用**。
+  ///
+  /// 为什么不能在 build 里直接 push/pop（旧实现的 bug）：
+  /// [BackBlocker.count] 被 Shell（`AppScaffold` 的 `ValueListenableBuilder`）
+  /// 监听，而本页是 `AppScaffold` 的**后代**。在 build 中改 count 会让 Shell
+  /// 在「正在 build 本页」时被 markNeedsBuild，Flutter 直接抛
+  /// `setState() or markNeedsBuild() called during build`：本次 build 中断、
+  /// Shell 的 builder 不会重建，`PopScope.canPop` 停留在旧值 `true`，
+  /// 系统返回于是直接 pop 到根 —— **退出软件**。
+  ///
+  /// 现在：选中态变化时只登记「期望」，真正的 push/pop 排到**帧后**执行，
+  /// count 的变更发生在 build 之外，Shell 正常重建，canPop 才会变 false。
   void _syncBackBlock(bool block) {
-    if (block && !_backBlocked) {
-      BackBlocker.push(_backHandler);
-      _backBlocked = true;
-    } else if (!block && _backBlocked) {
-      BackBlocker.pop(_backHandler);
-      _backBlocked = false;
-    }
+    if (block == _wantBackBlock) return; // 期望没变：无需排队
+    _wantBackBlock = block;
+    if (_backSyncScheduled) return; // 已有帧后回调，届时按最新期望落定
+    _backSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _backSyncScheduled = false;
+      // 页面已销毁：注册/注销交给 dispose 处理（此处不能再碰 BackBlocker，
+      // 否则可能为一个已卸载页面留下拦截器）。
+      if (!mounted) return;
+      if (_wantBackBlock == _backBlocked) return; // 已与期望一致
+      if (_wantBackBlock) {
+        BackBlocker.push(_backHandler);
+      } else {
+        BackBlocker.pop(_backHandler);
+      }
+      _backBlocked = _wantBackBlock;
+    });
   }
 
   @override
@@ -139,6 +171,10 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
     _displayColumnsF = ref.read(settingsProvider).gridColumns.toDouble();
     _settleAnim.addListener(_onSettleTick);
     _settleAnim.addStatusListener(_onSettleStatus);
+    // 初始选中态同步一次返回拦截：`ref.listen` 只在选中集**变化**时回调，
+    // 页面首次构建时若已有选中（如分支被重建），需要这里兜住。
+    // initState 位于 build 之外，登记期望后由帧后回调真正 push，安全。
+    _syncBackBlock(ref.read(selectionProvider).isNotEmpty);
     // 手势引导（R13）：首次使用自动弹出（跳过/看完都写已读标记）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -148,7 +184,15 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
 
   @override
   void dispose() {
-    if (_backBlocked) BackBlocker.pop(_backHandler);
+    // 只有**确实 push 过**（_backBlocked）才需要 pop。若 push 还躺在帧后
+    // 回调队列里没执行：回调里的 `if (!mounted) return` 会跳过它（等于从未
+    // 注册），此时 _backBlocked 仍为 false，这里也就不 pop —— 状态自洽。
+    // 反过来若已注册，则必须 pop，否则拦截器会随页面卸载残留在全局栈里，
+    // 让 Shell 的 canPop 永远为 false（返回键彻底失效）。
+    if (_backBlocked) {
+      _backBlocked = false;
+      BackBlocker.pop(_backHandler);
+    }
     _settleAnim.dispose();
     _dragSelect.dispose();
     _scrollController.dispose();
@@ -292,7 +336,25 @@ class _PhotoGridPageState extends ConsumerState<PhotoGridPage>
       _displayColumnsF = settings.gridColumns.toDouble();
     }
     // 多选态 → 拦截系统返回（返回=退出多选，而非退出软件）。
-    _syncBackBlock(hasSelection);
+    //
+    // **不在 build 里直接调 `_syncBackBlock(hasSelection)`**（旧实现踩的坑：
+    // 会 setState during build，导致 canPop 不更新、返回直接退出软件）。
+    // 改用 ref.listen：回调在「选中集变更的那一刻」触发（手势/按钮回调中，
+    // 不在 build 内），再由 `_syncBackBlock` 排到帧后落定。
+    //
+    // 这里必须用监听而不是在各个改选中的地方逐个调用：选中集是
+    // `selectionProvider`（全局 StateProvider），写入点散落在本文件之外——
+    // `PhotoGridItem` 的点按/长按（photo_grid_item.dart:160-166）、
+    // `MultiSelectBar` 的「清空选择」（multi_select_bar.dart:132）都会直接改它，
+    // 本页无从拦截。监听才能覆盖全部入口。
+    // ref.listen 在 build 内调用是合规用法（flutter_riverpod 每次 build 会先
+    // 关掉上一批订阅再重新注册），它只是「登记期望」，不在 build 中触碰
+    // BackBlocker，因此不会重现旧的 setState-during-build 问题。
+    // 初始值（页面首次构建时若已有选中）由 initState 里的那次同步兜住。
+    ref.listen<Set<int>>(
+      selectionProvider,
+      (Set<int>? previous, Set<int> next) => _syncBackBlock(next.isNotEmpty),
+    );
 
     return PopScope(
       // 选择态下：返回应"退出选中界面"而非退出软件；非选择态则正常返回（到达根则退出）。
