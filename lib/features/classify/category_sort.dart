@@ -8,15 +8,38 @@ import 'package:work_photos/features/me/settings_provider.dart';
 ///
 /// 中文按 Unicode 码位 deterministic 排序（同字典序行为）；
 /// 数字/英文/中文混排时数字 < 英文 < 中文。
+///
+/// 次级键为 [Category.id]：分类重名是允许的（同一父下建两个「材料」不会被
+/// 拦），而 [List.sort] 是不稳定排序，只比 name 时同名分类的相对顺序在每次
+/// 重排后都可能变——列表每次 build 都重排，用户看到的就是同名分类自己来回
+/// 跳动。补 id 后比较器成为严格全序，顺序只由数据决定。
 int Function(Category a, Category b)? categoryNameComparator(String mode) {
   switch (mode) {
     case kCategorySortNameAsc:
-      return (Category a, Category b) => a.name.compareTo(b.name);
+      return (Category a, Category b) =>
+          _compareByNameThenId(a, b, descending: false);
     case kCategorySortNameDesc:
-      return (Category a, Category b) => b.name.compareTo(a.name);
+      return (Category a, Category b) =>
+          _compareByNameThenId(a, b, descending: true);
     default:
       return null; // manual
   }
+}
+
+/// 名称主键 + id 次级键；[descending] 时**整体**取反。
+///
+/// 整体取反而不是只反转名称比较，是为了让次级键方向与主键一致：
+/// 降序时 id 也降序，升序列表的逆序才严格等于降序列表（单测按此断言）。
+/// id 可能为 null（尚未入库的新分类，如 `Category` 的临时草稿），
+/// 统一按 0 参与比较，避免空指针且排在同名组最前。
+int _compareByNameThenId(
+  Category a,
+  Category b, {
+  required bool descending,
+}) {
+  final int byName = a.name.compareTo(b.name);
+  final int cmp = byName != 0 ? byName : (a.id ?? 0).compareTo(b.id ?? 0);
+  return descending ? -cmp : cmp;
 }
 
 /// 对扁平分类列表按模式排序（手动模式原样返回副本）。

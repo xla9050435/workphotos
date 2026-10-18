@@ -46,7 +46,73 @@ void main() {
       expect(desc, isNotNull);
       expect(asc!(cat(1, 'a'), cat(2, 'b')), lessThan(0));
       expect(desc!(cat(1, 'a'), cat(2, 'b')), greaterThan(0));
-      expect(asc(cat(1, 'a'), cat(2, 'a')), 0);
+      // 同名不再返回 0：次级键 id 参与比较（id 小者在前，desc 时整体取反）。
+      expect(asc(cat(1, 'a'), cat(2, 'a')), lessThan(0));
+      expect(desc(cat(1, 'a'), cat(2, 'a')), greaterThan(0));
+      // 同一对象与自身比较才为 0。
+      expect(asc(cat(1, 'a'), cat(1, 'a')), 0);
+    });
+  });
+
+  group('categoryNameComparator — 同名 tie-break（不稳定排序回归）', () {
+    /// 同名分类：只比 name 时 List.sort 每次结果都可能不同。
+    List<Category> namesakes() => <Category>[
+          cat(3, '材料'),
+          cat(1, '材料'),
+          cat(5, '材料'),
+          cat(2, '材料'),
+          cat(4, '材料'),
+        ];
+
+    List<int?> idsOf(List<Category> list) =>
+        list.map((Category c) => c.id).toList();
+
+    test('nameAsc：同名按 id 升序', () {
+      final int Function(Category, Category) cmp =
+          categoryNameComparator(kCategorySortNameAsc)!;
+      final List<Category> out = namesakes()..sort(cmp);
+      expect(idsOf(out), <int?>[1, 2, 3, 4, 5]);
+    });
+
+    test('nameDesc：同名按 id 降序（次级键方向与主键一致）', () {
+      final int Function(Category, Category) cmp =
+          categoryNameComparator(kCategorySortNameDesc)!;
+      final List<Category> out = namesakes()..sort(cmp);
+      expect(idsOf(out), <int?>[5, 4, 3, 2, 1]);
+    });
+
+    test('id 为 null 视作 0，排在同名组最前', () {
+      final List<Category> list = <Category>[
+        cat(2, '同名'),
+        const Category(
+          id: null,
+          name: '同名',
+          colorHex: '#000000',
+          iconName: 'folder',
+        ),
+        cat(1, '同名'),
+      ];
+      final int Function(Category, Category) cmp =
+          categoryNameComparator(kCategorySortNameAsc)!;
+      final List<Category> out = list..sort(cmp);
+      expect(idsOf(out), <int?>[null, 1, 2]);
+    });
+
+    test('同一份数据重复排序 100 次结果不变', () {
+      final int Function(Category, Category) cmp =
+          categoryNameComparator(kCategorySortNameAsc)!;
+      final List<int?> first = idsOf(namesakes()..sort(cmp));
+      for (int i = 0; i < 100; i++) {
+        expect(idsOf(namesakes()..sort(cmp)), first);
+      }
+    });
+
+    test('降序结果严格等于升序结果的逆序', () {
+      final List<Category> asc = namesakes()
+        ..sort(categoryNameComparator(kCategorySortNameAsc)!);
+      final List<Category> desc = namesakes()
+        ..sort(categoryNameComparator(kCategorySortNameDesc)!);
+      expect(idsOf(desc), idsOf(asc).reversed.toList());
     });
   });
 

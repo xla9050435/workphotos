@@ -6,6 +6,7 @@ import 'package:photo_manager/photo_manager.dart' as pm;
 
 import 'package:work_photos/data/repositories/photo_repository.dart';
 import 'package:work_photos/features/import/album_browser.dart';
+import 'package:work_photos/features/import/asset_sort.dart';
 import 'package:work_photos/features/import/asset_viewer.dart';
 import 'package:work_photos/features/import/import_controller.dart';
 import 'package:work_photos/features/me/settings_provider.dart';
@@ -213,7 +214,8 @@ class _ImportPageState extends ConsumerState<ImportPage>
         setState(() {
           _assets = assets;
           _loading = false;
-          _hasMore = assets.length >= _pageSize;
+          // 只有页满才认为还有下一页：恰好整除时 `>=` 会多发一次空请求。
+          _hasMore = assets.length == _pageSize;
         });
       }
     } catch (e) {
@@ -238,9 +240,22 @@ class _ImportPageState extends ConsumerState<ImportPage>
           await _currentAlbum!.getAssetListPaged(page: next, size: _pageSize);
       if (mounted) {
         setState(() {
-          _assets = <pm.AssetEntity>[..._assets, ...more];
+          // 去重兜底：`getAssetListPaged` 是 offset 分页，而相册在用户浏览
+          // 期间可能被系统写入新照片（实测总数 12287→12288）。头部插入会让
+          // 后续所有项后移一位，于是第 N 页会与已加载内容重叠，出现同一张图
+          // 两次。重复 id 除了视觉重复，还会让 [AlbumBrowser] 的
+          // `_itemKeys.putIfAbsent(asset.id, ...)` 给两个格子返回同一个
+          // GlobalKey，直接抛 duplicate GlobalKey。故按 id 过滤后再追加。
+          final Set<String> known =
+              _assets.map((pm.AssetEntity a) => a.id).toSet();
+          final List<pm.AssetEntity> fresh = more
+              .where((pm.AssetEntity a) => !known.contains(a.id))
+              .toList();
+          _assets = <pm.AssetEntity>[..._assets, ...fresh];
           _page = next;
-          _hasMore = more.length >= _pageSize;
+          // 用原始页长度判断，不能用去重后的长度：整页都是重复项时
+          // 去重结果为 0 条，但下一页其实还有数据，误判会让分页提前中断。
+          _hasMore = more.length == _pageSize;
           _loadingMore = false;
         });
       }
@@ -309,12 +324,20 @@ class _ImportPageState extends ConsumerState<ImportPage>
   /// 排序后依次应用日期 / 星期几筛选（均为可选），再按
   /// [pm.AssetEntity.createDateTime] 的年月日分组，键即日期头文本
   /// （格式 yyyy年M月d日）。分组基于完整 [_assets]，而非单页结果。
+  ///
+  /// 排序键见 [compareAssetOrder]：拍摄时间为主键、资产 id 为次级键，且两个
+  /// 键方向一致。**次级键不可省**——MediaStore 的拍摄时间只到秒，同秒照片
+  /// 是常态；而 [List.sort] 不稳定、本方法又每次 build 都重跑，缺 tie-break
+  /// 时同秒照片的相对顺序每次都可能不同，表现为「点一下选中，格子就换位」。
   LinkedHashMap<String, List<pm.AssetEntity>> _buildGroups() {
     final List<pm.AssetEntity> sorted = List<pm.AssetEntity>.from(_assets);
-    sorted.sort((pm.AssetEntity a, pm.AssetEntity b) {
-      final int cmp = a.createDateTime.compareTo(b.createDateTime);
-      return _sortNewToOld ? -cmp : cmp;
-    });
+    sorted.sort((pm.AssetEntity a, pm.AssetEntity b) => compareAssetOrder(
+          aTime: a.createDateTime,
+          aId: a.id,
+          bTime: b.createDateTime,
+          bId: b.id,
+          newToOld: _sortNewToOld,
+        ));
     // 日期筛选：同天（忽略时分秒）。
     List<pm.AssetEntity> filtered = sorted;
     if (_filterDate != null) {
