@@ -46,6 +46,9 @@ class MainActivity : FlutterActivity() {
 
         /** startActivityForResult 的请求码（自定义，避免与 Flutter/插件冲突）。 */
         private const val REQUEST_CAPTURE = 0x0CA1
+
+        /** 应用信息 / 打开链接通道（与 app_native.dart 的通道名一致）。 */
+        private const val APP_CHANNEL = "work_photos/app"
     }
 
     /**
@@ -75,6 +78,60 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // 应用信息 / 打开链接通道：读版本（PackageManager）+ 用系统浏览器开链接。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, APP_CHANNEL)
+            .setMethodCallHandler { call: MethodCall, result: MethodChannel.Result ->
+                when (call.method) {
+                    "getVersion" -> result.success(currentVersionMap())
+                    "openUrl" -> {
+                        val url = call.argument<String>("url")
+                        if (url.isNullOrEmpty()) {
+                            result.error("bad_args", "缺少 url 参数", null)
+                        } else {
+                            result.success(openUrl(url))
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+    }
+
+    /**
+     * 读取当前 APK 版本：versionName（如 "1.3.1"）+ build 号（如 21）。
+     *
+     * versionCode 在 API 28 起推荐 longVersionCode，低版本回退（deprecated）versionCode。
+     * 任何异常都降级为 ("0.0.0", 0)，不让 Dart 侧崩。
+     */
+    private fun currentVersionMap(): Map<String, Any> {
+        val map = HashMap<String, Any>()
+        try {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            map["version"] = info.versionName ?: "0.0.0"
+            map["build"] = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode
+            }
+        } catch (e: Exception) {
+            map["version"] = "0.0.0"
+            map["build"] = 0
+        }
+        return map
+    }
+
+    /** 用系统浏览器打开 [url]（ACTION_VIEW）；成功拉起返回 true。 */
+    private fun openUrl(url: String): Boolean {
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /** 创建输出 Uri 并拉起系统相机（按系统版本分流）。 */

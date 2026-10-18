@@ -3,12 +3,49 @@ import 'package:flutter/material.dart';
 import 'package:work_photos/features/me/backup_page.dart';
 import 'package:work_photos/features/me/heart_survey_page.dart';
 import 'package:work_photos/features/me/settings_page.dart';
+import 'package:work_photos/features/me/update_flow.dart';
+import 'package:work_photos/services/app_native.dart';
+import 'package:work_photos/services/update_checker.dart';
 
 /// "我的"页（底部导航第四项 /me）。
 ///
-/// 当前承载：账户/应用概览占位 + "设置"入口。
-class MePage extends StatelessWidget {
+/// 当前承载：账户/应用概览占位 + 备份/反馈/检查更新/设置入口。
+class MePage extends StatefulWidget {
   const MePage({super.key});
+
+  @override
+  State<MePage> createState() => _MePageState();
+}
+
+class _MePageState extends State<MePage> {
+  /// 手动检查更新进行中：禁用重复点击 + 显示进度。
+  bool _checkingUpdate = false;
+
+  /// 手动「检查更新」：检查中显示 loading；已最新/失败用 SnackBar，有新版弹窗。
+  Future<void> _onCheckUpdate() async {
+    if (_checkingUpdate) return;
+    setState(() => _checkingUpdate = true);
+    try {
+      final UpdateInfo? info = await checkForUpdate();
+      if (!mounted) return;
+      if (info == null) {
+        final ({String version, int build}) v = await AppNative.getVersion();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已是最新版本 v${v.version}')),
+        );
+      } else {
+        await showUpdateDialog(context, info);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('检查失败，请检查网络')),
+      );
+    } finally {
+      if (mounted) setState(() => _checkingUpdate = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,10 +67,10 @@ class MePage extends StatelessWidget {
                       size: 40,
                       color: Theme.of(context).colorScheme.onPrimary),
                 ),
-                SizedBox(height: 12),
-                Text('work_photos',
+                const SizedBox(height: 12),
+                const Text('work_photos',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
                   '引用式照片管理',
                   style: TextStyle(
@@ -70,6 +107,20 @@ class MePage extends StatelessWidget {
                 ),
               );
             },
+          ),
+          // 检查更新：手动触发一次检查（启动时另有自动检查）。
+          ListTile(
+            leading: const Icon(Icons.system_update_outlined),
+            title: const Text('检查更新'),
+            subtitle: _checkingUpdate ? const Text('正在检查…') : null,
+            trailing: _checkingUpdate
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.chevron_right),
+            onTap: _checkingUpdate ? null : _onCheckUpdate,
           ),
           ListTile(
             leading: const Icon(Icons.settings),

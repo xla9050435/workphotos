@@ -58,7 +58,19 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- 检查更新「去更新」用 ACTION_VIEW 打开浏览器；Android 11+ 需声明可见性，
+             否则 resolve/查询不到浏览器（虽然直接 startActivity 通常仍可用，声明更稳）。 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
     </queries>
+    <!-- 检查更新需要访问 GitHub API（release 构建必须显式声明；debug 由 Flutter 注入）。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <!-- 相机快捷入口：在 Android 9 及以下（API <= 28）向公共 DCIM/WorkPhotos/
