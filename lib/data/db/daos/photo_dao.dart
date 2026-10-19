@@ -111,6 +111,11 @@ class PhotoDao extends DatabaseAccessor<AppDatabase>
     int? usedStatus,
     bool onlyUncategorized = false,
   }) {
+    if (categoryId != null && onlyUncategorized) {
+      // categoryId 与 onlyUncategorized 语义互斥：同时成立时结果必为空集，
+      // 直接返回空流，避免写出「INNER JOIN + NOT IN 全部」这类矛盾 SQL。
+      return Stream.value(<PhotoRow>[]);
+    }
     if (categoryId != null) {
       final query = select(photos).join([
         innerJoin(

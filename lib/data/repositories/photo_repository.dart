@@ -116,6 +116,23 @@ class PhotoRepository {
   Future<List<int>> categoriesOfPhoto(int photoId) =>
       _db.photoCategoryDao.byPhoto(photoId);
 
+  /// 查询某照片当前归属的分类详情列表（含名称）。
+  ///
+  /// 供详情页展示「所属分类」使用。返回空列表表示未归入任何分类。
+  Future<List<({int id, String name})>> categoriesOfPhotoWithNames(
+      int photoId) async {
+    final List<int> ids = await _db.photoCategoryDao.byPhoto(photoId);
+    if (ids.isEmpty) return <({int id, String name})>[];
+    final List<CategoryRow> rows = await _db.categoryDao.getAll();
+    final Map<int, String> nameOf = <int, String>{
+      for (final CategoryRow r in rows) if (r.id != null) r.id!: r.name,
+    };
+    return <({int id, String name})>[
+      for (final int id in ids)
+        (id: id, name: nameOf[id] ?? '未知'),
+    ];
+  }
+
   /// 按 id 取单张照片（不存在返回 null）。供详情页 [PhotoDetailPage] 使用。
   Future<Photo?> futureById(int id) async {
     final PhotoRow? row = await _db.photoDao.byId(id);

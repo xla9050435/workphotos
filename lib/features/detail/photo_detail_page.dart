@@ -7,6 +7,7 @@ import 'package:photo_manager/photo_manager.dart' as pm;
 import 'package:photo_view/photo_view.dart';
 
 import 'package:work_photos/data/models/photo.dart';
+import 'package:work_photos/features/classify/assign_category_sheet.dart';
 import 'package:work_photos/features/detail/video_pane.dart';
 import 'package:work_photos/features/share/share_panel.dart';
 import 'package:work_photos/providers/photo_provider.dart';
@@ -324,6 +325,9 @@ class _MetaBar extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 12),
+          // 所属分类：展示或编辑照片所属分类。
+          _CategoryBar(photo: photo),
+          const SizedBox(height: 12),
           // 详细信息：拍摄时间 / 尺寸 / 文件大小 / 类型 / 路径（解析 AssetEntity 与原文件）。
           _MetaInfo(photo: photo),
           const SizedBox(height: 12),
@@ -616,6 +620,136 @@ class _SwipeLayerState extends State<_SwipeLayer> {
     if ((wasDragging && committedDy > _dragCommitOffset) || isSwipeDown) {
       widget.onToggleFullscreen();
     }
+  }
+}
+
+/// 所属分类区块：展示照片当前归属的分类，并提供编辑入口。
+///
+/// 点击可拉起 [AssignCategorySheet] 修改归属；归属变化后自动刷新本详情页。
+class _CategoryBar extends ConsumerStatefulWidget {
+  final Photo photo;
+
+  const _CategoryBar({required this.photo});
+
+  @override
+  ConsumerState<_CategoryBar> createState() => _CategoryBarState();
+}
+
+class _CategoryBarState extends ConsumerState<_CategoryBar> {
+  /// 当前所属分类列表（id + 名称）。
+  List<({int id, String name})> _categories = const <({int id, String name})>[];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    if (widget.photo.id == null) return;
+    final list = await ref
+        .read(photoRepositoryProvider)
+        .categoriesOfPhotoWithNames(widget.photo.id!);
+    if (mounted) {
+      setState(() {
+        _categories = list;
+        _loading = false;
+      });
+    }
+  }
+
+  /// 分类变更后刷新本区块（由 [AssignCategorySheet] 完成写库后触发）。
+  void _onChanged() {
+    if (widget.photo.id != null && mounted) {
+      _loadCategories();
+      // 同时让详情页整体刷新（标记已用等状态联动）。
+      ref.invalidate(photoDetailProvider(widget.photo.id!));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Icon(Icons.folder, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            const Text('所属分类', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Spacer(),
+            TextButton.icon(
+              icon: const Icon(Icons.edit, size: 18),
+              label: const Text('编辑分类'),
+              onPressed: () => _showAssign(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (_loading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 4),
+            child: Center(
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else if (_categories.isEmpty)
+          Text('未归入任何分类',
+              style: TextStyle(color: scheme.onSurfaceVariant)),
+        else
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: <Widget>[
+              for (final ({int id, String name}) cat
+                  in _categories)
+                _CategoryChip(
+                  name: name,
+                  onRemove: () async {
+                    if (widget.photo.id == null) return;
+                    await ref
+                        .read(photoRepositoryProvider)
+                        .unassignCategory(widget.photo.id!, id);
+                    _onChanged();
+                  },
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Future<void> _showAssign(BuildContext context) async {
+    if (widget.photo.id == null) return;
+    await AssignCategorySheet.show(context, <int>[widget.photo.id!]);
+    _onChanged();
+  }
+}
+
+/// 单个分类标签（带移除按钮）。
+class _CategoryChip extends StatelessWidget {
+  final String name;
+  final VoidCallback onRemove;
+
+  const _CategoryChip({required this.name, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Chip(
+      label: Text(name),
+      deleteIcon: const Icon(Icons.close, size: 16),
+      onDeleted: onRemove,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      side: BorderSide(color: scheme.outlineVariant),
+    );
   }
 }
 
