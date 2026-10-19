@@ -3,7 +3,6 @@ import 'package:photo_manager/photo_manager.dart' as pm;
 
 import 'package:work_photos/core/utils/media_ref.dart';
 import 'package:work_photos/data/db/app_database.dart';
-import 'package:work_photos/data/db/tables/photos.dart';
 import 'package:work_photos/data/models/import_item.dart';
 import 'package:work_photos/data/models/media_type.dart';
 import 'package:work_photos/data/models/photo.dart';
@@ -125,7 +124,7 @@ class PhotoRepository {
     if (ids.isEmpty) return <({int id, String name})>[];
     final List<CategoryRow> rows = await _db.categoryDao.getAll();
     final Map<int, String> nameOf = <int, String>{
-      for (final CategoryRow r in rows) if (r.id != null) r.id!: r.name,
+      for (final CategoryRow r in rows) r.id: r.name,
     };
     return <({int id, String name})>[
       for (final int id in ids)

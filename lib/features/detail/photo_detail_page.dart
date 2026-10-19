@@ -688,6 +688,8 @@ class _CategoryBarState extends ConsumerState<_CategoryBar> {
           ],
         ),
         const SizedBox(height: 6),
+        // 分类加载态 / 空态 / 有分类态：整体作为单个列表项，避免 collection-for
+        // 与 if/else 表达式链在列表上下文里的解析歧义。
         if (_loading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 4),
@@ -701,21 +703,20 @@ class _CategoryBarState extends ConsumerState<_CategoryBar> {
           )
         else if (_categories.isEmpty)
           Text('未归入任何分类',
-              style: TextStyle(color: scheme.onSurfaceVariant)),
+              style: TextStyle(color: scheme.onSurfaceVariant))
         else
           Wrap(
             spacing: 6,
             runSpacing: 6,
             children: <Widget>[
-              for (final ({int id, String name}) cat
-                  in _categories)
+              for (final ({int id, String name}) cat in _categories)
                 _CategoryChip(
-                  name: name,
+                  name: cat.name,
                   onRemove: () async {
                     if (widget.photo.id == null) return;
                     await ref
                         .read(photoRepositoryProvider)
-                        .unassignCategory(widget.photo.id!, id);
+                        .unassignCategory(widget.photo.id!, cat.id);
                     _onChanged();
                   },
                 ),
